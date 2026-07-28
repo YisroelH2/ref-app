@@ -101,6 +101,7 @@ const ICON_FALLBACK = {
   X: '✕', Check: '✓', ChevronLeft: '‹', ChevronRight: '›', Users: '👥', Clock: '🕐',
   Flag: '⚑', Timer: '⏱', ArrowLeftRight: '⇄', Volume2: '🔔', Star: '★', Home: '⌂',
   RotateCw: '↻', ListRestart: '↺', SlidersHorizontal: '☰', CircleDot: '●', Trophy: '🏆',
+  Copy: '📋', Send: '➤',
 };
 
 function Icon({ name, size = 24, className = '', strokeWidth = 2.5 }) {
@@ -260,6 +261,45 @@ function Segmented({ options, value, onChange }) {
   );
 }
 
+/* ============================== TEAM COLORS ============================== */
+
+const TEAM_COLOR_PRESETS = [
+  { id: 'red', label: 'Red', swatch: 'bg-red-500', bg: 'bg-red-500', border: 'border-red-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'blue', label: 'Blue', swatch: 'bg-blue-500', bg: 'bg-blue-500', border: 'border-blue-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'green', label: 'Green', swatch: 'bg-emerald-500', bg: 'bg-emerald-500', border: 'border-emerald-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'yellow', label: 'Yellow', swatch: 'bg-yellow-400', bg: 'bg-yellow-400', border: 'border-yellow-300', text: 'text-black', sub: 'text-black/50', overlay: 'bg-white/35' },
+  { id: 'orange', label: 'Orange', swatch: 'bg-orange-500', bg: 'bg-orange-500', border: 'border-orange-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'purple', label: 'Purple', swatch: 'bg-purple-500', bg: 'bg-purple-500', border: 'border-purple-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'pink', label: 'Pink', swatch: 'bg-pink-500', bg: 'bg-pink-500', border: 'border-pink-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'sky', label: 'Sky', swatch: 'bg-sky-400', bg: 'bg-sky-400', border: 'border-sky-300', text: 'text-black', sub: 'text-black/50', overlay: 'bg-white/35' },
+  { id: 'white', label: 'White', swatch: 'bg-white', bg: 'bg-white', border: 'border-zinc-300', text: 'text-black', sub: 'text-black/50', overlay: 'bg-white/35' },
+  { id: 'black', label: 'Black', swatch: 'bg-zinc-800', bg: 'bg-zinc-800', border: 'border-zinc-600', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+];
+
+const DEFAULT_TEAM_COLOR = { bg: 'bg-zinc-900', border: 'border-white/10', text: 'text-white', sub: 'text-white/20', overlay: 'bg-white/10' };
+
+function teamColorClasses(colorId) {
+  const preset = TEAM_COLOR_PRESETS.find((c) => c.id === colorId);
+  if (!preset) return DEFAULT_TEAM_COLOR;
+  return { bg: preset.bg, border: preset.border, text: preset.text, sub: preset.sub, overlay: preset.overlay };
+}
+
+function ColorPicker({ value, onChange }) {
+  return (
+    <div className="flex flex-wrap gap-3">
+      {TEAM_COLOR_PRESETS.map((c) => (
+        <button
+          key={c.id}
+          type="button"
+          onClick={() => onChange(value === c.id ? null : c.id)}
+          aria-label={c.label}
+          className={`btn-press w-11 h-11 rounded-full ${c.swatch} border-2 ${value === c.id ? 'border-white ring-2 ring-white/50' : 'border-white/20'}`}
+        />
+      ))}
+    </div>
+  );
+}
+
 /* ============================== GLOBAL TIMER ============================== */
 
 const TIMER_KEY = 'refcourt_timer_v1';
@@ -275,6 +315,8 @@ function defaultTimer() {
     isRunning: false,
     pausedRemainingMs: 0,
     finished: false,
+    halftimeMins: 5,
+    bufferMins: 2,
   };
 }
 
@@ -310,11 +352,15 @@ function useGlobalTimer() {
     }
   }, [remainingMs, timer.configured, timer.isRunning, timer.finished, timer.currentHalf, setTimer]);
 
-  const setupAuto = useCallback((hh, mm) => {
+  const setupAuto = useCallback((hh, mm, halftimeMins, bufferMins) => {
     const endTs = nextOccurrence(hh, mm);
     const now = Date.now();
     const totalMs = Math.max(60000, endTs - now);
-    const half = totalMs / 2;
+    const ht = Math.max(0, halftimeMins || 0);
+    const buf = Math.max(0, bufferMins || 0);
+    const deductionMs = (ht + buf) * 60000;
+    const playableMs = Math.max(60000, totalMs - deductionMs);
+    const half = playableMs / 2;
     const label = 'Ends ' + new Date(endTs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     setTimer({
       configured: true,
@@ -326,6 +372,8 @@ function useGlobalTimer() {
       isRunning: true,
       pausedRemainingMs: half,
       finished: false,
+      halftimeMins: ht,
+      bufferMins: buf,
     });
   }, [setTimer]);
 
@@ -360,20 +408,28 @@ function useGlobalTimer() {
   return { timer, remainingMs, setupAuto, setupManual, toggle, reset };
 }
 
-function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupManual, initialMode }) {
+function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupManual, initialMode, initialHalftimeMins, initialBufferMins }) {
   const [mode, setMode] = useState(initialMode || 'auto');
   const [time, setTime] = useState('');
   const [minutes, setMinutes] = useState('15');
+  const [halftimeMins, setHalftimeMins] = useState(String(initialHalftimeMins ?? 5));
+  const [bufferMins, setBufferMins] = useState(String(initialBufferMins ?? 2));
 
   useEffect(() => {
-    if (open) setMode(initialMode || 'auto');
-  }, [open, initialMode]);
+    if (open) {
+      setMode(initialMode || 'auto');
+      setHalftimeMins(String(initialHalftimeMins ?? 5));
+      setBufferMins(String(initialBufferMins ?? 2));
+    }
+  }, [open, initialMode, initialHalftimeMins, initialBufferMins]);
 
   const start = () => {
     if (mode === 'auto') {
       if (!time) return;
       const [hh, mm] = time.split(':').map(Number);
-      onSetupAuto(hh, mm);
+      const ht = Math.max(0, parseInt(halftimeMins, 10) || 0);
+      const buf = Math.max(0, parseInt(bufferMins, 10) || 0);
+      onSetupAuto(hh, mm, ht, buf);
     } else {
       const m = parseInt(minutes, 10);
       if (!m || m <= 0) return;
@@ -408,6 +464,33 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupManual, initialMod
               className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-4 text-3xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
             />
           </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Halftime (mins)">
+              <input
+                type="number"
+                inputMode="numeric"
+                min="0"
+                max="60"
+                value={halftimeMins}
+                onChange={(e) => setHalftimeMins(e.target.value)}
+                className="w-full rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-2xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
+              />
+            </Field>
+            <Field label="End Buffer (mins)">
+              <input
+                type="number"
+                inputMode="numeric"
+                min="0"
+                max="30"
+                value={bufferMins}
+                onChange={(e) => setBufferMins(e.target.value)}
+                className="w-full rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-2xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
+              />
+            </Field>
+          </div>
+          <p className="text-white/30 text-xs mb-2 -mt-3 leading-relaxed">
+            We'll subtract halftime and the end buffer from the remaining time, then split what's left evenly into two halves.
+          </p>
         </>
       ) : (
         <>
@@ -458,6 +541,8 @@ function TimerBar({ globalTimer }) {
           onSetupAuto={globalTimer.setupAuto}
           onSetupManual={globalTimer.setupManual}
           initialMode={timer.mode}
+          initialHalftimeMins={timer.halftimeMins}
+          initialBufferMins={timer.bufferMins}
         />
       </>
     );
@@ -540,24 +625,110 @@ function Header({ title, onBack, onSettings }) {
 
 /* ============================== SHARED SCORE HALF ============================== */
 
-function ScoreHalf({ name, score, onScore, onUndo, footer, scoreClassName = 'text-8xl' }) {
+function ScoreHalf({ name, score, onScore, onUndo, footer, scoreClassName = 'text-8xl', color }) {
+  const c = teamColorClasses(color);
   return (
     <button
       onClick={onScore}
-      className="btn-press flex-1 rounded-3xl bg-zinc-900 border-2 border-white/10 flex flex-col items-center justify-center gap-2 relative overflow-hidden py-4"
+      className={`btn-press flex-1 rounded-3xl ${c.bg} border-2 ${c.border} flex flex-col items-center justify-center gap-2 relative overflow-hidden py-4`}
     >
-      <div className="absolute top-3 left-3 text-white/20 text-xs font-extrabold tracking-widest">TAP TO SCORE</div>
-      <div className="text-lg font-bold text-white/70 truncate max-w-[90%]">{name}</div>
-      <div className={`${scoreClassName} font-black tabular`}>{score}</div>
+      <div className={`absolute top-3 left-3 ${c.sub} text-xs font-extrabold tracking-widest`}>TAP TO SCORE</div>
+      <div className={`text-lg font-bold ${c.text} opacity-70 truncate max-w-[90%]`}>{name}</div>
+      <div className={`${scoreClassName} font-black tabular ${c.text}`}>{score}</div>
       {footer}
       <div
         role="button"
         onClick={(e) => { e.stopPropagation(); onUndo(); }}
-        className="btn-press absolute bottom-3 right-3 w-11 h-11 rounded-full bg-white/10 flex items-center justify-center"
+        className={`btn-press absolute bottom-3 right-3 w-11 h-11 rounded-full ${c.overlay} ${c.text} flex items-center justify-center`}
       >
         <Icon name="Minus" size={18} />
       </div>
     </button>
+  );
+}
+
+/* ============================== SHARED END GAME ============================== */
+
+const ACTIVITY_PERIODS = ['First Activity', 'Second Activity', 'Third Activity', 'Fourth Activity', 'Fifth Activity'];
+
+function EndGameSheet({ open, onClose, sportLabel, teamA, teamB, scoreA, scoreB }) {
+  const [activityPeriod, setActivityPeriod] = useLocalStorage('refcourt_activity_period_v1', 'First Activity');
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!open) setCopied(false);
+  }, [open]);
+
+  const winnerName = scoreA > scoreB ? teamA : scoreB > scoreA ? teamB : null;
+  const message = winnerName
+    ? `${winnerName} wins ${sportLabel} ${activityPeriod}.`
+    : `${sportLabel} ${activityPeriod} ended in a tie, ${scoreA}-${scoreB}.`;
+
+  const copyMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(message);
+    } catch (e) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = message;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch (e2) {}
+    }
+    setCopied(true);
+    vibrate(30);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const sendWhatsApp = () => {
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+  };
+
+  return (
+    <Sheet open={open} onClose={onClose} title="End Game">
+      <Field label="Activity Period">
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          {ACTIVITY_PERIODS.map((p) => (
+            <button
+              key={p}
+              onClick={() => setActivityPeriod(p)}
+              className={`btn-press rounded-xl py-3 text-sm font-bold ${activityPeriod === p ? 'bg-white text-black' : 'bg-white/10 text-white/70'}`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+        <TextInput
+          value={activityPeriod}
+          onChange={(e) => setActivityPeriod(e.target.value)}
+          placeholder="Custom period name..."
+          maxLength={30}
+        />
+      </Field>
+
+      <div className="rounded-2xl bg-white/5 border border-white/10 p-5 mb-6 text-center">
+        <div className="text-xs font-extrabold tracking-widest text-white/40 mb-2">FINAL SCORE</div>
+        <div className="text-lg font-bold mb-3">{teamA} {scoreA} — {scoreB} {teamB}</div>
+        <div className="text-emerald-400 font-extrabold text-xl leading-snug">{message}</div>
+      </div>
+
+      <BigButton
+        onClick={copyMessage}
+        className="w-full rounded-2xl bg-white/10 py-6 font-extrabold text-lg mb-3 flex items-center justify-center gap-2"
+      >
+        <Icon name={copied ? 'Check' : 'Copy'} size={22} /> {copied ? 'Copied!' : 'Copy Message'}
+      </BigButton>
+      <BigButton
+        onClick={sendWhatsApp}
+        className="w-full rounded-2xl bg-emerald-400 text-black py-6 font-extrabold text-lg flex items-center justify-center gap-2"
+      >
+        <Icon name="Send" size={22} /> Send to Bentzi (WhatsApp)
+      </BigButton>
+    </Sheet>
   );
 }
 
@@ -612,6 +783,7 @@ function defaultVolleyball() {
 function Volleyball({ globalTimer, onBack }) {
   const [vb, setVb] = useLocalStorage(VB_KEY, defaultVolleyball());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [endGameOpen, setEndGameOpen] = useState(false);
 
   const point = () => {
     setVb((s) => ({
@@ -700,11 +872,27 @@ function Volleyball({ globalTimer, onBack }) {
         </BigButton>
         <BigButton
           onClick={() => setVb(defaultVolleyball())}
-          className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400"
+          className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mb-3"
         >
           Reset Match
         </BigButton>
+        <BigButton
+          onClick={() => { setSettingsOpen(false); setEndGameOpen(true); }}
+          className="w-full rounded-2xl bg-orange-500 py-4 font-extrabold text-white flex items-center justify-center gap-2"
+        >
+          <Icon name="Flag" size={18} /> End Game
+        </BigButton>
       </Sheet>
+
+      <EndGameSheet
+        open={endGameOpen}
+        onClose={() => setEndGameOpen(false)}
+        sportLabel="Volleyball"
+        teamA={vb.teamA}
+        teamB={vb.teamB}
+        scoreA={vb.scoreA}
+        scoreB={vb.scoreB}
+      />
     </div>
   );
 }
@@ -716,6 +904,7 @@ const FB_KEY = 'refcourt_football_v1';
 function defaultFootball() {
   return {
     teamA: 'Team A', teamB: 'Team B', scoreA: 0, scoreB: 0,
+    colorA: null, colorB: null,
     timeoutMode: 'half', timeoutCount: 3,
     timeoutsA: 3, timeoutsB: 3,
     half: 1,
@@ -725,6 +914,7 @@ function defaultFootball() {
 function Football({ globalTimer, onBack }) {
   const [fb, setFb] = useLocalStorage(FB_KEY, defaultFootball());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [endGameOpen, setEndGameOpen] = useState(false);
 
   const addPoint = (team) => {
     setFb((s) => ({ ...s, [team === 'A' ? 'scoreA' : 'scoreB']: (team === 'A' ? s.scoreA : s.scoreB) + 1 }));
@@ -795,6 +985,7 @@ function Football({ globalTimer, onBack }) {
           onUndo={() => undo('A')}
           scoreClassName="text-7xl"
           footer={<TimeoutFooter team="A" />}
+          color={fb.colorA}
         />
         <ScoreHalf
           name={fb.teamB}
@@ -803,6 +994,7 @@ function Football({ globalTimer, onBack }) {
           onUndo={() => undo('B')}
           scoreClassName="text-7xl"
           footer={<TimeoutFooter team="B" />}
+          color={fb.colorB}
         />
       </div>
 
@@ -822,8 +1014,14 @@ function Football({ globalTimer, onBack }) {
         <Field label="Team A Name">
           <TextInput value={fb.teamA} onChange={(e) => setFb((s) => ({ ...s, teamA: e.target.value }))} maxLength={16} />
         </Field>
+        <Field label="Team A Color">
+          <ColorPicker value={fb.colorA} onChange={(c) => setFb((s) => ({ ...s, colorA: c }))} />
+        </Field>
         <Field label="Team B Name">
           <TextInput value={fb.teamB} onChange={(e) => setFb((s) => ({ ...s, teamB: e.target.value }))} maxLength={16} />
+        </Field>
+        <Field label="Team B Color">
+          <ColorPicker value={fb.colorB} onChange={(c) => setFb((s) => ({ ...s, colorB: c }))} />
         </Field>
         <Field label="Timeouts Reset">
           <Segmented
@@ -842,11 +1040,27 @@ function Football({ globalTimer, onBack }) {
         </Field>
         <BigButton
           onClick={() => setFb(defaultFootball())}
-          className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2"
+          className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2 mb-3"
         >
           Reset Game
         </BigButton>
+        <BigButton
+          onClick={() => { setSettingsOpen(false); setEndGameOpen(true); }}
+          className="w-full rounded-2xl bg-orange-500 py-4 font-extrabold text-white flex items-center justify-center gap-2"
+        >
+          <Icon name="Flag" size={18} /> End Game
+        </BigButton>
       </Sheet>
+
+      <EndGameSheet
+        open={endGameOpen}
+        onClose={() => setEndGameOpen(false)}
+        sportLabel="Football"
+        teamA={fb.teamA}
+        teamB={fb.teamB}
+        scoreA={fb.scoreA}
+        scoreB={fb.scoreB}
+      />
     </div>
   );
 }
@@ -860,7 +1074,7 @@ const UNIVERSAL_CONFIG = {
 };
 
 function defaultUniversal() {
-  return { teamA: 'Team A', teamB: 'Team B', scoreA: 0, scoreB: 0, period: 1, half: 'Top' };
+  return { teamA: 'Team A', teamB: 'Team B', scoreA: 0, scoreB: 0, colorA: null, colorB: null, period: 1, half: 'Top' };
 }
 
 function Universal({ sport, globalTimer, onBack }) {
@@ -868,6 +1082,7 @@ function Universal({ sport, globalTimer, onBack }) {
   const key = `refcourt_${sport}_v1`;
   const [g, setG] = useLocalStorage(key, defaultUniversal());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [endGameOpen, setEndGameOpen] = useState(false);
 
   const addPoint = (team) => {
     setG((s) => ({ ...s, [team === 'A' ? 'scoreA' : 'scoreB']: (team === 'A' ? s.scoreA : s.scoreB) + 1 }));
@@ -889,8 +1104,8 @@ function Universal({ sport, globalTimer, onBack }) {
       <TimerBar globalTimer={globalTimer} />
 
       <div className="flex flex-col gap-3 flex-1 mb-4" style={{ minHeight: '48vh' }}>
-        <ScoreHalf name={g.teamA} score={g.scoreA} onScore={() => addPoint('A')} onUndo={() => undo('A')} />
-        <ScoreHalf name={g.teamB} score={g.scoreB} onScore={() => addPoint('B')} onUndo={() => undo('B')} />
+        <ScoreHalf name={g.teamA} score={g.scoreA} onScore={() => addPoint('A')} onUndo={() => undo('A')} color={g.colorA} />
+        <ScoreHalf name={g.teamB} score={g.scoreB} onScore={() => addPoint('B')} onUndo={() => undo('B')} color={g.colorB} />
       </div>
 
       <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 px-5 flex items-center justify-between">
@@ -912,16 +1127,38 @@ function Universal({ sport, globalTimer, onBack }) {
         <Field label="Team A Name">
           <TextInput value={g.teamA} onChange={(e) => setG((s) => ({ ...s, teamA: e.target.value }))} maxLength={16} />
         </Field>
+        <Field label="Team A Color">
+          <ColorPicker value={g.colorA} onChange={(c) => setG((s) => ({ ...s, colorA: c }))} />
+        </Field>
         <Field label="Team B Name">
           <TextInput value={g.teamB} onChange={(e) => setG((s) => ({ ...s, teamB: e.target.value }))} maxLength={16} />
         </Field>
+        <Field label="Team B Color">
+          <ColorPicker value={g.colorB} onChange={(c) => setG((s) => ({ ...s, colorB: c }))} />
+        </Field>
         <BigButton
           onClick={() => setG(defaultUniversal())}
-          className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2"
+          className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2 mb-3"
         >
           Reset Game
         </BigButton>
+        <BigButton
+          onClick={() => { setSettingsOpen(false); setEndGameOpen(true); }}
+          className="w-full rounded-2xl bg-orange-500 py-4 font-extrabold text-white flex items-center justify-center gap-2"
+        >
+          <Icon name="Flag" size={18} /> End Game
+        </BigButton>
       </Sheet>
+
+      <EndGameSheet
+        open={endGameOpen}
+        onClose={() => setEndGameOpen(false)}
+        sportLabel={cfg.title}
+        teamA={g.teamA}
+        teamB={g.teamB}
+        scoreA={g.scoreA}
+        scoreB={g.scoreB}
+      />
     </div>
   );
 }
@@ -931,12 +1168,13 @@ function Universal({ sport, globalTimer, onBack }) {
 const BK_KEY = 'refcourt_basketball_v1';
 
 function defaultBasketball() {
-  return { teamA: 'Team A', teamB: 'Team B', scoreA: 0, scoreB: 0, foulsA: 0, foulsB: 0, quarter: 1, history: [] };
+  return { teamA: 'Team A', teamB: 'Team B', scoreA: 0, scoreB: 0, colorA: null, colorB: null, half: 1, history: [] };
 }
 
 function Basketball({ globalTimer, onBack }) {
   const [bk, setBk] = useLocalStorage(BK_KEY, defaultBasketball());
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [endGameOpen, setEndGameOpen] = useState(false);
 
   const addScore = (team, pts) => {
     setBk((s) => ({
@@ -959,41 +1197,30 @@ function Basketball({ globalTimer, onBack }) {
     });
   };
 
-  const setFouls = (team, value) => {
-    setBk((s) => ({ ...s, [team === 'A' ? 'foulsA' : 'foulsB']: Math.max(0, value) }));
-  };
-
-  const changeQuarter = (delta) => setBk((s) => ({ ...s, quarter: Math.max(1, s.quarter + delta) }));
+  const setHalf = (half) => setBk((s) => ({ ...s, half }));
 
   const lastAction = bk.history[bk.history.length - 1];
 
   const TeamSide = ({ team }) => {
     const name = team === 'A' ? bk.teamA : bk.teamB;
     const score = team === 'A' ? bk.scoreA : bk.scoreB;
-    const fouls = team === 'A' ? bk.foulsA : bk.foulsB;
+    const color = team === 'A' ? bk.colorA : bk.colorB;
+    const c = teamColorClasses(color);
     return (
-      <div className="flex-1 rounded-3xl bg-zinc-900 border-2 border-white/10 flex flex-col items-center justify-center gap-3 py-4 px-3">
-        <div className="text-lg font-bold text-white/70 truncate max-w-full">{name}</div>
-        <div className="text-7xl font-black tabular">{score}</div>
+      <div className={`flex-1 rounded-3xl ${c.bg} border-2 ${c.border} flex flex-col items-center justify-center gap-3 py-4 px-3`}>
+        <div className={`text-lg font-bold ${c.text} opacity-70 truncate max-w-full`}>{name}</div>
+        <div className={`text-7xl font-black tabular ${c.text}`}>{score}</div>
         <div className="grid grid-cols-3 gap-2 w-full">
-          <BigButton onClick={() => addScore(team, 1)} className="rounded-2xl bg-white/10 py-5 font-extrabold text-lg flex flex-col items-center gap-0.5">
+          <BigButton onClick={() => addScore(team, 1)} className={`rounded-2xl ${c.overlay} ${c.text} py-5 font-extrabold text-lg flex flex-col items-center gap-0.5`}>
             <span>+1</span>
-            <span className="text-[9px] font-bold text-white/40 tracking-widest">FT</span>
+            <span className={`text-[9px] font-bold ${c.sub} tracking-widest`}>FT</span>
           </BigButton>
-          <BigButton onClick={() => addScore(team, 2)} className="rounded-2xl bg-white/10 py-5 font-extrabold text-lg">
+          <BigButton onClick={() => addScore(team, 2)} className={`rounded-2xl ${c.overlay} ${c.text} py-5 font-extrabold text-lg`}>
             +2
           </BigButton>
-          <BigButton onClick={() => addScore(team, 3)} className="rounded-2xl bg-emerald-400 text-black py-5 font-extrabold text-lg">
+          <BigButton onClick={() => addScore(team, 3)} className={`rounded-2xl ${c.overlay} ${c.text} border-2 border-white/30 py-5 font-extrabold text-lg`}>
             +3
           </BigButton>
-        </div>
-        <div className="flex items-center justify-between w-full pt-3 border-t border-white/10">
-          <div className="text-[10px] font-bold text-white/30 tracking-widest">TEAM FOULS</div>
-          <div className="flex items-center gap-2">
-            <IconButton name="Minus" size={14} onClick={() => setFouls(team, fouls - 1)} />
-            <div className="w-6 text-center text-lg font-extrabold tabular">{fouls}</div>
-            <IconButton name="Plus" size={14} onClick={() => setFouls(team, fouls + 1)} />
-          </div>
         </div>
       </div>
     );
@@ -1009,16 +1236,13 @@ function Basketball({ globalTimer, onBack }) {
         <TeamSide team="B" />
       </div>
 
-      <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 px-5 flex items-center justify-between mb-3">
-        <IconButton name="ChevronLeft" onClick={() => changeQuarter(-1)} label="Previous quarter" />
-        <div className="text-center">
-          <div className="text-xs font-extrabold tracking-widest text-white/40">QUARTER</div>
-          <div className="text-3xl font-black tabular">
-            {bk.quarter}
-            <span className="text-white/30 text-lg">/4</span>
-          </div>
-        </div>
-        <IconButton name="ChevronRight" onClick={() => changeQuarter(1)} label="Next quarter" />
+      <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 px-5 mb-3">
+        <div className="text-xs font-extrabold tracking-widest text-white/40 text-center mb-2">HALF</div>
+        <Segmented
+          options={[{ value: 1, label: '1st Half' }, { value: 2, label: '2nd Half' }]}
+          value={bk.half}
+          onChange={setHalf}
+        />
       </div>
 
       <BigButton
@@ -1034,16 +1258,38 @@ function Basketball({ globalTimer, onBack }) {
         <Field label="Team A Name">
           <TextInput value={bk.teamA} onChange={(e) => setBk((s) => ({ ...s, teamA: e.target.value }))} maxLength={16} />
         </Field>
+        <Field label="Team A Color">
+          <ColorPicker value={bk.colorA} onChange={(c) => setBk((s) => ({ ...s, colorA: c }))} />
+        </Field>
         <Field label="Team B Name">
           <TextInput value={bk.teamB} onChange={(e) => setBk((s) => ({ ...s, teamB: e.target.value }))} maxLength={16} />
         </Field>
+        <Field label="Team B Color">
+          <ColorPicker value={bk.colorB} onChange={(c) => setBk((s) => ({ ...s, colorB: c }))} />
+        </Field>
         <BigButton
           onClick={() => setBk(defaultBasketball())}
-          className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2"
+          className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2 mb-3"
         >
           Reset Game
         </BigButton>
+        <BigButton
+          onClick={() => { setSettingsOpen(false); setEndGameOpen(true); }}
+          className="w-full rounded-2xl bg-orange-500 py-4 font-extrabold text-white flex items-center justify-center gap-2"
+        >
+          <Icon name="Flag" size={18} /> End Game
+        </BigButton>
       </Sheet>
+
+      <EndGameSheet
+        open={endGameOpen}
+        onClose={() => setEndGameOpen(false)}
+        sportLabel="Basketball"
+        teamA={bk.teamA}
+        teamB={bk.teamB}
+        scoreA={bk.scoreA}
+        scoreB={bk.scoreB}
+      />
     </div>
   );
 }
