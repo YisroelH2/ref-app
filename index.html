@@ -30,6 +30,7 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
   tailwind.config = {
+    darkMode: 'class',
     theme: {
       extend: {
         fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
@@ -85,6 +86,21 @@
 
   .btn-press { transition: transform 0.08s ease, background-color 0.15s ease, opacity 0.15s ease; }
   .btn-press:active { transform: scale(0.95); }
+
+  html.light-mode {
+    filter: invert(1) hue-rotate(180deg);
+  }
+  html.light-mode img,
+  html.light-mode video {
+    filter: invert(1) hue-rotate(180deg);
+  }
+  .emoji-safe {
+    display: inline-block;
+    filter: invert(1) hue-rotate(180deg);
+  }
+  html:not(.light-mode) .emoji-safe {
+    filter: none;
+  }
 </style>
 </head>
 <body class="bg-black text-white">
@@ -94,7 +110,7 @@
 
 const { useState, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 
 /* ============================== ICONS ============================== */
 
@@ -180,6 +196,38 @@ function resolveClosestHour24(hour12, minute) {
 
 function vibrate(pattern) {
   try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
+}
+
+/* ============================== APP SETTINGS ============================== */
+
+const APP_SETTINGS_KEY = 'refcourt_app_settings_v1';
+
+function defaultAppSettings() {
+  return {
+    theme: 'dark',
+    footballTimeouts: 3,
+    volleyballRegularTarget: 16,
+    volleyballDecidingTarget: 11,
+  };
+}
+
+function getAppSettings() {
+  try {
+    const raw = localStorage.getItem(APP_SETTINGS_KEY);
+    return raw ? { ...defaultAppSettings(), ...JSON.parse(raw) } : defaultAppSettings();
+  } catch (e) {
+    return defaultAppSettings();
+  }
+}
+
+function useAppSettings() {
+  const [settings, setSettings] = useLocalStorage(APP_SETTINGS_KEY, defaultAppSettings());
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('light-mode', settings.theme === 'light');
+  }, [settings.theme]);
+
+  return [settings, setSettings];
 }
 
 /* ============================== PRIMITIVES ============================== */
@@ -998,9 +1046,68 @@ function VibrationTest() {
   );
 }
 
-function Home({ onSelect }) {
+function AppSettingsSheet({ open, onClose, settings, setSettings }) {
   return (
-    <div className="px-5 pt-6 pb-8 max-w-md mx-auto">
+    <Sheet open={open} onClose={onClose} title="App Settings">
+      <Field label="Appearance">
+        <Segmented
+          options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }]}
+          value={settings.theme}
+          onChange={(v) => setSettings((s) => ({ ...s, theme: v }))}
+        />
+      </Field>
+
+      <Field label="Football · Default Timeouts">
+        <Stepper
+          value={settings.footballTimeouts}
+          min={1}
+          max={6}
+          onChange={(v) => setSettings((s) => ({ ...s, footballTimeouts: v }))}
+        />
+      </Field>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Volleyball · Sets 1-2">
+          <input
+            type="number"
+            inputMode="numeric"
+            min="1"
+            max="99"
+            value={settings.volleyballRegularTarget}
+            onChange={(e) => {
+              const v = e.target.value;
+              setSettings((s) => ({ ...s, volleyballRegularTarget: v === '' ? '' : Math.max(1, Math.min(99, parseInt(v, 10) || 1)) }));
+            }}
+            className="w-full rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-2xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
+          />
+        </Field>
+        <Field label="Volleyball · Set 3+">
+          <input
+            type="number"
+            inputMode="numeric"
+            min="1"
+            max="99"
+            value={settings.volleyballDecidingTarget}
+            onChange={(e) => {
+              const v = e.target.value;
+              setSettings((s) => ({ ...s, volleyballDecidingTarget: v === '' ? '' : Math.max(1, Math.min(99, parseInt(v, 10) || 1)) }));
+            }}
+            className="w-full rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-2xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
+          />
+        </Field>
+      </div>
+      <p className="text-white/30 text-xs mt-2 leading-relaxed">
+        These are the starting defaults for new games — each sport's own settings can still override them for that game.
+      </p>
+    </Sheet>
+  );
+}
+
+function Home({ onSelect, settings, setSettings }) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  return (
+    <div className="px-5 pt-6 pb-8 max-w-md mx-auto flex flex-col min-h-[100dvh]">
       <div className="flex items-center justify-between mb-1">
         <div className="text-3xl font-black tracking-tight">YKP-refs</div>
         <LiveClock className="text-white/40 text-sm font-bold tabular" />
@@ -1014,7 +1121,7 @@ function Home({ onSelect }) {
             onClick={() => onSelect(s.id)}
             className={`btn-press aspect-square rounded-3xl bg-zinc-900 ring-1 ${s.ring} flex flex-col items-center justify-center gap-2 shadow-lg ${s.glow}`}
           >
-            <div className="text-6xl leading-none">{s.emoji}</div>
+            <div className="text-6xl leading-none emoji-safe">{s.emoji}</div>
             <div className="text-base font-extrabold">{s.label}</div>
           </button>
         ))}
@@ -1029,6 +1136,23 @@ function Home({ onSelect }) {
       <div className="flex justify-center">
         <VibrationTest />
       </div>
+
+      <div className="flex-1" />
+
+      <button
+        onClick={() => setSettingsOpen(true)}
+        className="btn-press w-full mt-6 flex items-center justify-center gap-2 rounded-2xl bg-zinc-900 border border-white/10 py-4 text-white/60 font-bold text-sm"
+      >
+        <Icon name="Settings" size={16} />
+        App Settings
+      </button>
+
+      <AppSettingsSheet
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={settings}
+        setSettings={setSettings}
+      />
     </div>
   );
 }
@@ -1038,7 +1162,13 @@ function Home({ onSelect }) {
 const VB_KEY = 'refcourt_volleyball_v1';
 
 function defaultVolleyball() {
-  return { teamA: 'Team A', teamB: 'Team B', colorA: null, colorB: null, scoreA: 0, scoreB: 0, serving: 'A', streak: 0, set: 1, target: 25, setHistory: [] };
+  const s = getAppSettings();
+  return {
+    teamA: 'Team A', teamB: 'Team B', colorA: null, colorB: null, scoreA: 0, scoreB: 0, serving: 'A', streak: 0, set: 1,
+    regularTarget: s.volleyballRegularTarget,
+    decidingTarget: s.volleyballDecidingTarget,
+    setHistory: [],
+  };
 }
 
 function Volleyball({ globalTimer, onBack }) {
@@ -1079,7 +1209,7 @@ function Volleyball({ globalTimer, onBack }) {
 
   const setServer = (team) => setVb((s) => ({ ...s, serving: team, streak: 0 }));
 
-  const spTarget = vb.target || 25;
+  const spTarget = vb.set >= 3 ? (vb.decidingTarget || 11) : (vb.regularTarget || 16);
   const serverScore = vb.serving === 'A' ? vb.scoreA : vb.scoreB;
   const receiverScore = vb.serving === 'A' ? vb.scoreB : vb.scoreA;
   const serverName = vb.serving === 'A' ? vb.teamA : vb.teamB;
@@ -1178,23 +1308,39 @@ function Volleyball({ globalTimer, onBack }) {
           onCustomName={(v) => setVb((s) => ({ ...s, teamB: v }))}
           onCustomColor={(c) => setVb((s) => ({ ...s, colorB: c }))}
         />
-        <Field label="Points to Win Set">
-          <input
-            type="number"
-            inputMode="numeric"
-            min="1"
-            max="99"
-            value={vb.target ?? 25}
-            onChange={(e) => {
-              const v = e.target.value;
-              setVb((s) => ({ ...s, target: v === '' ? '' : Math.max(1, Math.min(99, parseInt(v, 10) || 1)) }));
-            }}
-            className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-3 text-2xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
-          />
-          <p className="text-white/30 text-xs mt-2 leading-relaxed">
-            We'll flag "Point Serve" when the serving team can win the set on this serve — and "Wins By 2" once both teams are close enough that the win-by-two rule is in play.
-          </p>
-        </Field>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Sets 1-2 Target">
+            <input
+              type="number"
+              inputMode="numeric"
+              min="1"
+              max="99"
+              value={vb.regularTarget ?? 16}
+              onChange={(e) => {
+                const v = e.target.value;
+                setVb((s) => ({ ...s, regularTarget: v === '' ? '' : Math.max(1, Math.min(99, parseInt(v, 10) || 1)) }));
+              }}
+              className="w-full rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-2xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
+            />
+          </Field>
+          <Field label="Set 3+ Target">
+            <input
+              type="number"
+              inputMode="numeric"
+              min="1"
+              max="99"
+              value={vb.decidingTarget ?? 11}
+              onChange={(e) => {
+                const v = e.target.value;
+                setVb((s) => ({ ...s, decidingTarget: v === '' ? '' : Math.max(1, Math.min(99, parseInt(v, 10) || 1)) }));
+              }}
+              className="w-full rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-2xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
+            />
+          </Field>
+        </div>
+        <p className="text-white/30 text-xs mt-2 mb-3 leading-relaxed">
+          We'll flag "Point Serve" when the serving team can win the set on this serve — and "Wins By 2" once both teams are close enough that the win-by-two rule is in play.
+        </p>
         <BigButton onClick={switchSides} className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white mb-3 flex items-center justify-center gap-2">
           <Icon name="ArrowLeftRight" size={18} /> Switch Sides
         </BigButton>
@@ -1227,11 +1373,12 @@ function Volleyball({ globalTimer, onBack }) {
 const FB_KEY = 'refcourt_football_v1';
 
 function defaultFootball() {
+  const to = getAppSettings().footballTimeouts;
   return {
     teamA: 'Team A', teamB: 'Team B', scoreA: 0, scoreB: 0,
     colorA: null, colorB: null,
-    timeoutMode: 'half', timeoutCount: 3,
-    timeoutsA: 3, timeoutsB: 3,
+    timeoutMode: 'half', timeoutCount: to,
+    timeoutsA: to, timeoutsB: to,
     half: 1,
   };
 }
@@ -1404,7 +1551,7 @@ const UNIVERSAL_CONFIG = {
 };
 
 function defaultUniversal() {
-  return { teamA: 'Team A', teamB: 'Team B', scoreA: 0, scoreB: 0, colorA: null, colorB: null, period: 1, half: 'Top' };
+  return { teamA: 'Team A', teamB: 'Team B', scoreA: 0, scoreB: 0, colorA: null, colorB: null, period: 1, half: 'Top', topTeam: 'A' };
 }
 
 function Universal({ sport, globalTimer, onBack }) {
@@ -1427,6 +1574,11 @@ function Universal({ sport, globalTimer, onBack }) {
   };
 
   const toggleHalf = () => setG((s) => ({ ...s, half: s.half === 'Top' ? 'Bottom' : 'Top' }));
+  const swapTopBottom = () => setG((s) => ({ ...s, topTeam: s.topTeam === 'A' ? 'B' : 'A' }));
+
+  const topTeam = g.topTeam || 'A';
+  const battingTeam = g.half === 'Top' ? topTeam : (topTeam === 'A' ? 'B' : 'A');
+  const battingTeamName = battingTeam === 'A' ? g.teamA : g.teamB;
 
   return (
     <div className="px-5 pt-6 pb-8 max-w-md mx-auto flex flex-col min-h-[100dvh]">
@@ -1458,7 +1610,7 @@ function Universal({ sport, globalTimer, onBack }) {
         >
           <Icon name="ArrowLeftRight" size={20} className="text-white/40" />
           <span className="text-lg font-extrabold tracking-wide">
-            {g.half.toUpperCase()} &middot; {g.half === 'Top' ? g.teamA : g.teamB} BATTING
+            {g.half.toUpperCase()} &middot; {battingTeamName} BATTING
           </span>
         </button>
       )}
@@ -1480,6 +1632,14 @@ function Universal({ sport, globalTimer, onBack }) {
           onCustomName={(v) => setG((s) => ({ ...s, teamB: v }))}
           onCustomColor={(c) => setG((s) => ({ ...s, colorB: c }))}
         />
+        {sport === 'baseball' && (
+          <BigButton
+            onClick={swapTopBottom}
+            className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white mt-2 mb-3 flex items-center justify-center gap-2"
+          >
+            <Icon name="ArrowLeftRight" size={18} /> Swap Top/Bottom Teams
+          </BigButton>
+        )}
         <BigButton
           onClick={() => setG(defaultUniversal())}
           className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2 mb-3"
@@ -1657,6 +1817,7 @@ function Basketball({ globalTimer, onBack }) {
 function App() {
   const [screen, setScreen] = useLocalStorage('refcourt_screen_v1', 'home');
   const globalTimer = useGlobalTimer();
+  const [settings, setSettings] = useAppSettings();
 
   useEffect(() => {
     window.history.replaceState({ screen: 'home' }, '');
@@ -1681,12 +1842,12 @@ function App() {
   const goHome = () => window.history.back();
 
   let content;
-  if (screen === 'home') content = <Home onSelect={goTo} />;
+  if (screen === 'home') content = <Home onSelect={goTo} settings={settings} setSettings={setSettings} />;
   else if (screen === 'volleyball') content = <Volleyball globalTimer={globalTimer} onBack={goHome} />;
   else if (screen === 'football') content = <Football globalTimer={globalTimer} onBack={goHome} />;
   else if (screen === 'basketball') content = <Basketball globalTimer={globalTimer} onBack={goHome} />;
   else if (UNIVERSAL_CONFIG[screen]) content = <Universal sport={screen} globalTimer={globalTimer} onBack={goHome} />;
-  else content = <Home onSelect={goTo} />;
+  else content = <Home onSelect={goTo} settings={settings} setSettings={setSettings} />;
 
   return <div className="min-h-[100dvh]">{content}</div>;
 }

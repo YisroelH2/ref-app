@@ -12,7 +12,7 @@
 //   - In the fetch handler we must treat `response.type === 'opaque'` as a
 //     cacheable success, since opaque responses always report `ok: false`.
 
-const CACHE_VERSION = 'v1.4.0';
+const CACHE_VERSION = 'v1.5.0';
 const CACHE_NAME = `refcourt-${CACHE_VERSION}`;
 
 // Same-origin app shell.
