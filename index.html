@@ -969,6 +969,32 @@ const SPORTS = [
   { id: 'basketball', label: 'Basketball', emoji: '🏀', ring: 'ring-amber-500/40', glow: 'hover:shadow-amber-500/20' },
 ];
 
+function VibrationTest() {
+  const [result, setResult] = useState(null);
+
+  const test = () => {
+    if (!('vibrate' in navigator)) {
+      setResult('unsupported');
+      return;
+    }
+    const ok = navigator.vibrate(300);
+    setResult(ok ? 'sent' : 'blocked');
+  };
+
+  return (
+    <button
+      onClick={test}
+      className="btn-press mt-4 mx-auto flex items-center gap-2 rounded-full bg-white/5 border border-white/10 px-4 py-2 text-[11px] font-bold text-white/40"
+    >
+      <Icon name="Volume2" size={13} />
+      Test Vibration
+      {result === 'sent' && <span className="text-emerald-400">· sent — feel it?</span>}
+      {result === 'blocked' && <span className="text-red-400">· blocked by browser</span>}
+      {result === 'unsupported' && <span className="text-red-400">· not supported here</span>}
+    </button>
+  );
+}
+
 function Home({ onSelect }) {
   return (
     <div className="px-5 pt-6 pb-8 max-w-md mx-auto">
@@ -996,6 +1022,9 @@ function Home({ onSelect }) {
       </div>
       <div className="mt-2 text-center text-white/15 text-[10px] font-bold tracking-widest">
         v{APP_VERSION}
+      </div>
+      <div className="flex justify-center">
+        <VibrationTest />
       </div>
     </div>
   );
