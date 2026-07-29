@@ -207,6 +207,19 @@ function IconButton({ name, onClick, size = 22, className = '', label }) {
   );
 }
 
+function FloatingEndGameButton({ onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label="End Game"
+      className="btn-press fixed z-40 flex items-center justify-center rounded-full bg-orange-500 text-white shadow-lg shadow-black/50 border border-white/20 active:bg-orange-600"
+      style={{ top: 'calc(env(safe-area-inset-top) + 10px)', left: '10px', width: 40, height: 40 }}
+    >
+      <Icon name="Flag" size={17} />
+    </button>
+  );
+}
+
 function Sheet({ open, onClose, title, children }) {
   if (!open) return null;
   return (
@@ -484,6 +497,23 @@ function useGlobalTimer() {
       }
     }
   }, [remainingMs, timer.configured, timer.isRunning, timer.finished, timer.currentHalf, setTimer]);
+
+  const warnBucketRef = useRef(null);
+  useEffect(() => {
+    if (!timer.configured || !timer.isRunning || timer.finished) {
+      warnBucketRef.current = null;
+      return;
+    }
+    const secs = Math.ceil(remainingMs / 1000);
+    if (secs > 0 && secs <= 30 && secs % 5 === 0) {
+      if (warnBucketRef.current !== secs) {
+        warnBucketRef.current = secs;
+        vibrate(60);
+      }
+    } else if (secs > 30) {
+      warnBucketRef.current = null;
+    }
+  }, [remainingMs, timer.configured, timer.isRunning, timer.finished]);
 
   const setupAuto = useCallback((hh, mm, halftimeMins, bufferMins) => {
     const endTs = nextOccurrence(hh, mm);
@@ -958,7 +988,7 @@ function Home({ onSelect }) {
 const VB_KEY = 'refcourt_volleyball_v1';
 
 function defaultVolleyball() {
-  return { teamA: 'Team A', teamB: 'Team B', colorA: null, colorB: null, scoreA: 0, scoreB: 0, serving: 'A', streak: 0, set: 1 };
+  return { teamA: 'Team A', teamB: 'Team B', colorA: null, colorB: null, scoreA: 0, scoreB: 0, serving: 'A', streak: 0, set: 1, target: 25, setHistory: [] };
 }
 
 function Volleyball({ globalTimer, onBack }) {
@@ -984,12 +1014,37 @@ function Volleyball({ globalTimer, onBack }) {
     setVb((s) => ({ ...s, [team === 'A' ? 'scoreA' : 'scoreB']: Math.max(0, (team === 'A' ? s.scoreA : s.scoreB) - 1) }));
   };
 
-  const newSet = () => setVb((s) => ({ ...s, scoreA: 0, scoreB: 0, streak: 0, set: s.set + 1 }));
+  const newSet = () => setVb((s) => {
+    const winner = s.scoreA > s.scoreB ? 'A' : s.scoreB > s.scoreA ? 'B' : null;
+    return { ...s, scoreA: 0, scoreB: 0, streak: 0, set: s.set + 1, setHistory: [...s.setHistory, winner] };
+  });
+
+  const switchSides = () => setVb((s) => ({
+    ...s,
+    teamA: s.teamB, teamB: s.teamA,
+    colorA: s.colorB, colorB: s.colorA,
+    scoreA: s.scoreB, scoreB: s.scoreA,
+    serving: s.serving === 'A' ? 'B' : 'A',
+  }));
 
   const setServer = (team) => setVb((s) => ({ ...s, serving: team, streak: 0 }));
 
+  const spTarget = vb.target || 25;
+  const aSetPoint = vb.scoreA >= spTarget - 1 && (vb.scoreA - vb.scoreB) >= 1;
+  const bSetPoint = vb.scoreB >= spTarget - 1 && (vb.scoreB - vb.scoreA) >= 1;
+  const setPointRef = useRef(false);
+  useEffect(() => {
+    const active = aSetPoint || bSetPoint;
+    if (active && !setPointRef.current) vibrate(40);
+    setPointRef.current = active;
+  }, [aSetPoint, bSetPoint]);
+
+  const setsWonA = vb.setHistory.filter((w) => w === 'A').length;
+  const setsWonB = vb.setHistory.filter((w) => w === 'B').length;
+
   return (
-    <div className="px-5 pt-6 pb-8 max-w-md mx-auto flex flex-col min-h-screen">
+    <div className="px-5 pt-16 pb-8 max-w-md mx-auto flex flex-col min-h-screen">
+      <FloatingEndGameButton onClick={() => setEndGameOpen(true)} />
       <Header title="Volleyball" onBack={onBack} onSettings={() => setSettingsOpen(true)} />
       <TimerBar globalTimer={globalTimer} />
 
@@ -997,6 +1052,16 @@ function Volleyball({ globalTimer, onBack }) {
         <div className="text-white/40 text-xs font-extrabold tracking-widest">SET {vb.set}</div>
         <div className="text-white/40 text-xs font-extrabold tracking-widest">STREAK {vb.streak}</div>
       </div>
+
+      <div className="text-center text-white/50 text-xs font-bold mb-3">
+        SETS &middot; {vb.teamA} {setsWonA} &ndash; {setsWonB} {vb.teamB}
+      </div>
+
+      {(aSetPoint || bSetPoint) && (
+        <div className="mb-3 rounded-2xl bg-yellow-400 text-black text-center py-2.5 font-extrabold text-sm tracking-widest animate-pulse-fast">
+          {aSetPoint ? vb.teamA : vb.teamB} SET POINT
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 mb-4 flex-1">
         {['A', 'B'].map((team) => {
@@ -1060,6 +1125,26 @@ function Volleyball({ globalTimer, onBack }) {
           onCustomName={(v) => setVb((s) => ({ ...s, teamB: v }))}
           onCustomColor={(c) => setVb((s) => ({ ...s, colorB: c }))}
         />
+        <Field label="Points to Win Set">
+          <input
+            type="number"
+            inputMode="numeric"
+            min="1"
+            max="99"
+            value={vb.target}
+            onChange={(e) => {
+              const v = e.target.value;
+              setVb((s) => ({ ...s, target: v === '' ? '' : Math.max(1, Math.min(99, parseInt(v, 10) || 1)) }));
+            }}
+            className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-3 text-2xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
+          />
+          <p className="text-white/30 text-xs mt-2 leading-relaxed">
+            We'll flag "Set Point" once a team could win the set on the next rally (win-by-two respected).
+          </p>
+        </Field>
+        <BigButton onClick={switchSides} className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white mb-3 flex items-center justify-center gap-2">
+          <Icon name="ArrowLeftRight" size={18} /> Switch Sides
+        </BigButton>
         <BigButton onClick={newSet} className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white mb-3 flex items-center justify-center gap-2">
           <Icon name="RotateCcw" size={18} /> Start New Set
         </BigButton>
@@ -1068,12 +1153,6 @@ function Volleyball({ globalTimer, onBack }) {
           className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mb-3"
         >
           Reset Match
-        </BigButton>
-        <BigButton
-          onClick={() => { setSettingsOpen(false); setEndGameOpen(true); }}
-          className="w-full rounded-2xl bg-orange-500 py-4 font-extrabold text-white flex items-center justify-center gap-2"
-        >
-          <Icon name="Flag" size={18} /> End Game
         </BigButton>
       </Sheet>
 
@@ -1147,17 +1226,20 @@ function Football({ globalTimer, onBack }) {
 
   const TimeoutFooter = ({ team }) => {
     const remaining = team === 'A' ? fb.timeoutsA : fb.timeoutsB;
+    const color = team === 'A' ? fb.colorA : fb.colorB;
+    const c = teamColorClasses(color);
+    const light = c.text === 'text-black';
+    const dotFill = light ? 'bg-black border-black' : 'bg-white border-white';
+    const dotEmpty = light ? 'border-black/30' : 'border-white/30';
     return (
-      <div onClick={(e) => e.stopPropagation()} className="w-full mt-1">
-        <div className="text-[10px] font-bold text-white/30 tracking-widest text-center mb-2">TIMEOUTS</div>
-        <div className="flex items-center justify-center gap-2">
+      <div className="w-full mt-1 px-1">
+        <div className="flex items-center gap-1.5">
+          <span className={`text-[9px] font-bold ${c.sub} tracking-widest mr-0.5`}>TO</span>
           {Array.from({ length: fb.timeoutCount }).map((_, i) => (
             <div
               key={i}
-              onClick={() => (i < remaining ? useTimeout(team) : restoreTimeout(team))}
-              className={`btn-press w-7 h-7 rounded-full border-2 ${
-                i < remaining ? 'bg-orange-400 border-orange-400' : 'border-white/25 bg-transparent'
-              }`}
+              onClick={(e) => { e.stopPropagation(); i < remaining ? useTimeout(team) : restoreTimeout(team); }}
+              className={`btn-press w-4 h-4 rounded-full border ${i < remaining ? dotFill : `${dotEmpty} bg-transparent`}`}
             />
           ))}
         </div>
@@ -1166,7 +1248,8 @@ function Football({ globalTimer, onBack }) {
   };
 
   return (
-    <div className="px-5 pt-6 pb-8 max-w-md mx-auto flex flex-col min-h-screen">
+    <div className="px-5 pt-16 pb-8 max-w-md mx-auto flex flex-col min-h-screen">
+      <FloatingEndGameButton onClick={() => setEndGameOpen(true)} />
       <Header title="Football" onBack={onBack} onSettings={() => setSettingsOpen(true)} />
       <TimerBar globalTimer={globalTimer} />
 
@@ -1241,12 +1324,6 @@ function Football({ globalTimer, onBack }) {
         >
           Reset Game
         </BigButton>
-        <BigButton
-          onClick={() => { setSettingsOpen(false); setEndGameOpen(true); }}
-          className="w-full rounded-2xl bg-orange-500 py-4 font-extrabold text-white flex items-center justify-center gap-2"
-        >
-          <Icon name="Flag" size={18} /> End Game
-        </BigButton>
       </Sheet>
 
       <EndGameSheet
@@ -1296,9 +1373,10 @@ function Universal({ sport, globalTimer, onBack }) {
   const toggleHalf = () => setG((s) => ({ ...s, half: s.half === 'Top' ? 'Bottom' : 'Top' }));
 
   return (
-    <div className="px-5 pt-6 pb-8 max-w-md mx-auto flex flex-col min-h-screen">
+    <div className="px-5 pt-16 pb-8 max-w-md mx-auto flex flex-col min-h-screen">
+      <FloatingEndGameButton onClick={() => setEndGameOpen(true)} />
       <Header title={cfg.title} onBack={onBack} onSettings={() => setSettingsOpen(true)} />
-      <TimerBar globalTimer={globalTimer} />
+      {sport !== 'baseball' && <TimerBar globalTimer={globalTimer} />}
 
       <div className="flex flex-col gap-3 flex-1 mb-4" style={{ minHeight: '48vh' }}>
         <ScoreHalf name={g.teamA} score={g.scoreA} onScore={() => addPoint('A')} onUndo={() => undo('A')} color={g.colorA} />
@@ -1313,12 +1391,21 @@ function Universal({ sport, globalTimer, onBack }) {
             {g.period}
             <span className="text-white/30 text-lg">/{cfg.maxUnit}</span>
           </div>
-          {sport === 'baseball' && (
-            <button onClick={toggleHalf} className="text-xs font-bold text-white/50 mt-0.5">{g.half}</button>
-          )}
         </div>
         <IconButton name="ChevronRight" onClick={() => changePeriod(1)} label="Next period" />
       </div>
+
+      {sport === 'baseball' && (
+        <button
+          onClick={toggleHalf}
+          className="btn-press w-full mt-3 rounded-2xl bg-zinc-900 border-2 border-white/10 py-5 px-5 flex items-center justify-center gap-2 active:bg-white/10"
+        >
+          <Icon name="ArrowLeftRight" size={20} className="text-white/40" />
+          <span className="text-lg font-extrabold tracking-wide">
+            {g.half.toUpperCase()} &middot; {g.half === 'Top' ? g.teamA : g.teamB} BATTING
+          </span>
+        </button>
+      )}
 
       <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title={`${cfg.title} Settings`}>
         <TeamPicker
@@ -1343,12 +1430,6 @@ function Universal({ sport, globalTimer, onBack }) {
         >
           Reset Game
         </BigButton>
-        <BigButton
-          onClick={() => { setSettingsOpen(false); setEndGameOpen(true); }}
-          className="w-full rounded-2xl bg-orange-500 py-4 font-extrabold text-white flex items-center justify-center gap-2"
-        >
-          <Icon name="Flag" size={18} /> End Game
-        </BigButton>
       </Sheet>
 
       <EndGameSheet
@@ -1369,7 +1450,7 @@ function Universal({ sport, globalTimer, onBack }) {
 const BK_KEY = 'refcourt_basketball_v1';
 
 function defaultBasketball() {
-  return { teamA: 'Team A', teamB: 'Team B', scoreA: 0, scoreB: 0, colorA: null, colorB: null, half: 1, history: [] };
+  return { teamA: 'Team A', teamB: 'Team B', scoreA: 0, scoreB: 0, colorA: null, colorB: null, half: 1, periodMode: 'halves', history: [] };
 }
 
 function Basketball({ globalTimer, onBack }) {
@@ -1427,8 +1508,13 @@ function Basketball({ globalTimer, onBack }) {
     );
   };
 
+  const periodOptions = bk.periodMode === 'quarters'
+    ? [{ value: 1, label: '1st' }, { value: 2, label: '2nd' }, { value: 3, label: '3rd' }, { value: 4, label: '4th' }]
+    : [{ value: 1, label: '1st Half' }, { value: 2, label: '2nd Half' }];
+
   return (
-    <div className="px-5 pt-6 pb-8 max-w-md mx-auto flex flex-col min-h-screen">
+    <div className="px-5 pt-16 pb-8 max-w-md mx-auto flex flex-col min-h-screen">
+      <FloatingEndGameButton onClick={() => setEndGameOpen(true)} />
       <Header title="Basketball" onBack={onBack} onSettings={() => setSettingsOpen(true)} />
       <TimerBar globalTimer={globalTimer} />
 
@@ -1438,12 +1524,10 @@ function Basketball({ globalTimer, onBack }) {
       </div>
 
       <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 px-5 mb-3">
-        <div className="text-xs font-extrabold tracking-widest text-white/40 text-center mb-2">HALF</div>
-        <Segmented
-          options={[{ value: 1, label: '1st Half' }, { value: 2, label: '2nd Half' }]}
-          value={bk.half}
-          onChange={setHalf}
-        />
+        <div className="text-xs font-extrabold tracking-widest text-white/40 text-center mb-2">
+          {bk.periodMode === 'quarters' ? 'QUARTER' : 'HALF'}
+        </div>
+        <Segmented options={periodOptions} value={bk.half} onChange={setHalf} />
       </div>
 
       <BigButton
@@ -1452,7 +1536,7 @@ function Basketball({ globalTimer, onBack }) {
         className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white/80 flex items-center justify-center gap-2"
       >
         <Icon name="RotateCcw" size={18} />
-        {lastAction ? `Undo +${lastAction.pts} · Team ${lastAction.team}` : 'Undo Last Score'}
+        {lastAction ? `Undo +${lastAction.pts} · ${lastAction.team === 'A' ? bk.teamA : bk.teamB}` : 'Undo Last Score'}
       </BigButton>
 
       <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Basketball Settings">
@@ -1472,17 +1556,18 @@ function Basketball({ globalTimer, onBack }) {
           onCustomName={(v) => setBk((s) => ({ ...s, teamB: v }))}
           onCustomColor={(c) => setBk((s) => ({ ...s, colorB: c }))}
         />
+        <Field label="Periods">
+          <Segmented
+            options={[{ value: 'halves', label: 'Halves' }, { value: 'quarters', label: 'Quarters' }]}
+            value={bk.periodMode}
+            onChange={(v) => setBk((s) => ({ ...s, periodMode: v, half: 1 }))}
+          />
+        </Field>
         <BigButton
           onClick={() => setBk(defaultBasketball())}
           className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2 mb-3"
         >
           Reset Game
-        </BigButton>
-        <BigButton
-          onClick={() => { setSettingsOpen(false); setEndGameOpen(true); }}
-          className="w-full rounded-2xl bg-orange-500 py-4 font-extrabold text-white flex items-center justify-center gap-2"
-        >
-          <Icon name="Flag" size={18} /> End Game
         </BigButton>
       </Sheet>
 
