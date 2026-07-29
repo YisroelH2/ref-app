@@ -169,6 +169,13 @@ function nextOccurrence(hh, mm) {
   return d.getTime();
 }
 
+function resolveClosestHour24(hour12, minute) {
+  const h = ((hour12 % 12) + 12) % 12;
+  const amTs = nextOccurrence(h, minute);
+  const pmTs = nextOccurrence(h + 12, minute);
+  return amTs <= pmTs ? h : h + 12;
+}
+
 function vibrate(pattern) {
   try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
 }
@@ -274,6 +281,10 @@ const TEAM_COLOR_PRESETS = [
   { id: 'sky', label: 'Sky', swatch: 'bg-sky-400', bg: 'bg-sky-400', border: 'border-sky-300', text: 'text-black', sub: 'text-black/50', overlay: 'bg-white/35' },
   { id: 'white', label: 'White', swatch: 'bg-white', bg: 'bg-white', border: 'border-zinc-300', text: 'text-black', sub: 'text-black/50', overlay: 'bg-white/35' },
   { id: 'black', label: 'Black', swatch: 'bg-zinc-800', bg: 'bg-zinc-800', border: 'border-zinc-600', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'brown', label: 'Brown', swatch: 'bg-amber-800', bg: 'bg-amber-800', border: 'border-amber-700', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'grey', label: 'Grey', swatch: 'bg-gray-500', bg: 'bg-gray-500', border: 'border-gray-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'navy', label: 'Navy Blue', swatch: 'bg-blue-900', bg: 'bg-blue-900', border: 'border-blue-800', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'darkgreen', label: 'Dark Green', swatch: 'bg-green-800', bg: 'bg-green-800', border: 'border-green-700', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
 ];
 
 const DEFAULT_TEAM_COLOR = { bg: 'bg-zinc-900', border: 'border-white/10', text: 'text-white', sub: 'text-white/20', overlay: 'bg-white/10' };
@@ -297,6 +308,128 @@ function ColorPicker({ value, onChange }) {
         />
       ))}
     </div>
+  );
+}
+
+/* ============================== CAMP TEAM ROSTER ============================== */
+
+const CAMP_TEAMS = [
+  { city: 'Klimavitch', counselor: 'Edelkopf', color: 'black' },
+  { city: 'Nevel', counselor: 'Wonder', color: 'red' },
+  { city: 'Kremenchuk', counselor: 'Fischer', color: 'blue' },
+  { city: 'Dnipropetrovsk', counselor: 'Margo', color: 'darkgreen' },
+  { city: 'Yekatrinaslav', counselor: 'Wineburg', color: 'yellow' },
+  { city: 'Rostov', counselor: 'Naparstak', color: 'brown' },
+  { city: 'Otvotsk', counselor: 'Raskin', color: 'orange' },
+  { city: 'Nezhin', counselor: 'Sason', color: 'purple' },
+  { city: 'Nikolayev', counselor: 'Baumgarten', color: 'grey' },
+  { city: 'Poltava', counselor: 'Drizin', color: 'navy' },
+].map((t) => ({ ...t, label: `${t.city} - ${t.counselor}` }));
+
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const dp = [];
+  for (let i = 0; i <= m; i++) dp.push([i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+function fuzzyDistance(query, text) {
+  query = query.toLowerCase();
+  text = text.toLowerCase();
+  if (!query) return 0;
+  if (text.includes(query)) return 0;
+  const qLen = query.length;
+  let best = Infinity;
+  for (let i = 0; i < text.length; i++) {
+    for (let len = Math.max(1, qLen - 2); len <= qLen + 2; len++) {
+      if (i + len > text.length) continue;
+      const d = levenshtein(query, text.slice(i, i + len));
+      if (d < best) best = d;
+    }
+  }
+  return best;
+}
+
+function searchCampTeams(query) {
+  const q = query.trim();
+  if (!q) return CAMP_TEAMS;
+  const threshold = Math.max(2, Math.ceil(q.length * 0.5));
+  return CAMP_TEAMS
+    .map((t) => ({ team: t, score: Math.min(fuzzyDistance(q, t.city), fuzzyDistance(q, t.counselor), fuzzyDistance(q, t.label)) }))
+    .filter((s) => s.score <= threshold)
+    .sort((a, b) => a.score - b.score)
+    .map((s) => s.team);
+}
+
+function TeamPicker({ label, teamName, teamColor, onSelect, onCustomName, onCustomColor }) {
+  const isRosterName = CAMP_TEAMS.some((t) => t.label === teamName);
+  const [mode, setMode] = useState(isRosterName || !teamColor ? 'roster' : 'custom');
+  const [query, setQuery] = useState(isRosterName ? teamName : '');
+  const [open, setOpen] = useState(false);
+
+  const results = open ? searchCampTeams(query) : [];
+
+  return (
+    <Field label={label}>
+      {mode === 'roster' ? (
+        <>
+          <TextInput
+            value={query}
+            onFocus={() => setOpen(true)}
+            onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+            placeholder="Search team or counselor..."
+          />
+          {open && (
+            <div className="mt-2 rounded-xl bg-white/5 border border-white/10 overflow-hidden max-h-64 overflow-y-auto">
+              {results.length === 0 ? (
+                <div className="px-4 py-3 text-white/40 text-sm">No matches</div>
+              ) : (
+                results.map((t) => (
+                  <button
+                    key={t.label}
+                    type="button"
+                    onClick={() => { onSelect(t); setQuery(t.label); setOpen(false); }}
+                    className="w-full flex items-center gap-3 px-4 py-3 text-left border-b border-white/5 last:border-0 active:bg-white/10"
+                  >
+                    <span className={`w-5 h-5 rounded-full shrink-0 ${teamColorClasses(t.color).bg} border border-white/20`} />
+                    <span className="font-semibold">{t.label}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => { setMode('custom'); setOpen(false); }}
+            className="mt-3 text-xs font-bold text-white/40 underline"
+          >
+            Custom Team Instead
+          </button>
+        </>
+      ) : (
+        <>
+          <TextInput value={teamName} onChange={(e) => onCustomName(e.target.value)} maxLength={20} placeholder="Team name" />
+          <div className="mt-3">
+            <ColorPicker value={teamColor} onChange={onCustomColor} />
+          </div>
+          <button
+            type="button"
+            onClick={() => { setMode('roster'); setQuery(''); setOpen(false); }}
+            className="mt-3 text-xs font-bold text-white/40 underline"
+          >
+            Choose From Camp Roster
+          </button>
+        </>
+      )}
+    </Field>
   );
 }
 
@@ -408,9 +541,10 @@ function useGlobalTimer() {
   return { timer, remainingMs, setupAuto, setupManual, toggle, reset };
 }
 
-function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupManual, initialMode, initialHalftimeMins, initialBufferMins }) {
+function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupManual, initialMode, initialHalftimeMins, initialBufferMins, isConfigured, onReset }) {
   const [mode, setMode] = useState(initialMode || 'auto');
-  const [time, setTime] = useState('');
+  const [hour, setHour] = useState('');
+  const [minute, setMinute] = useState('');
   const [minutes, setMinutes] = useState('15');
   const [halftimeMins, setHalftimeMins] = useState(String(initialHalftimeMins ?? 5));
   const [bufferMins, setBufferMins] = useState(String(initialBufferMins ?? 2));
@@ -425,16 +559,23 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupManual, initialMod
 
   const start = () => {
     if (mode === 'auto') {
-      if (!time) return;
-      const [hh, mm] = time.split(':').map(Number);
+      const h12 = parseInt(hour, 10);
+      const m = parseInt(minute, 10);
+      if (!h12 || h12 < 1 || h12 > 12 || isNaN(m) || m < 0 || m > 59) return;
+      const hh = resolveClosestHour24(h12, m);
       const ht = Math.max(0, parseInt(halftimeMins, 10) || 0);
       const buf = Math.max(0, parseInt(bufferMins, 10) || 0);
-      onSetupAuto(hh, mm, ht, buf);
+      onSetupAuto(hh, m, ht, buf);
     } else {
       const m = parseInt(minutes, 10);
       if (!m || m <= 0) return;
       onSetupManual(m);
     }
+    onClose();
+  };
+
+  const deleteTimer = () => {
+    onReset();
     onClose();
   };
 
@@ -457,12 +598,37 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupManual, initialMod
             Enter the exact time this activity must end. We'll split the remaining time evenly into two halves and start the countdown.
           </p>
           <Field label="Activity ends at">
-            <input
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-4 text-3xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
-            />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="text-[10px] font-bold text-white/30 tracking-widest mb-1 text-center">HOUR</div>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max="12"
+                  value={hour}
+                  onChange={(e) => setHour(e.target.value)}
+                  placeholder="7"
+                  className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-4 text-3xl font-extrabold text-white text-center outline-none focus:border-emerald-400/60 tabular"
+                />
+              </div>
+              <div>
+                <div className="text-[10px] font-bold text-white/30 tracking-widest mb-1 text-center">MINUTE</div>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min="0"
+                  max="59"
+                  value={minute}
+                  onChange={(e) => setMinute(e.target.value)}
+                  placeholder="00"
+                  className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-4 text-3xl font-extrabold text-white text-center outline-none focus:border-emerald-400/60 tabular"
+                />
+              </div>
+            </div>
+            <p className="text-white/30 text-xs mt-2 leading-relaxed">
+              No need for AM/PM — we'll pick whichever is sooner.
+            </p>
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Halftime (mins)">
@@ -517,6 +683,15 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupManual, initialMod
       >
         Start Countdown
       </BigButton>
+
+      {isConfigured && (
+        <BigButton
+          onClick={deleteTimer}
+          className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-3"
+        >
+          Reset / Delete Timer
+        </BigButton>
+      )}
     </Sheet>
   );
 }
@@ -543,6 +718,8 @@ function TimerBar({ globalTimer }) {
           initialMode={timer.mode}
           initialHalftimeMins={timer.halftimeMins}
           initialBufferMins={timer.bufferMins}
+          isConfigured={timer.configured}
+          onReset={reset}
         />
       </>
     );
@@ -592,6 +769,10 @@ function TimerBar({ globalTimer }) {
         onSetupAuto={globalTimer.setupAuto}
         onSetupManual={globalTimer.setupManual}
         initialMode={timer.mode}
+        initialHalftimeMins={timer.halftimeMins}
+        initialBufferMins={timer.bufferMins}
+        isConfigured={timer.configured}
+        onReset={reset}
       />
     </div>
   );
@@ -649,7 +830,7 @@ function ScoreHalf({ name, score, onScore, onUndo, footer, scoreClassName = 'tex
 
 /* ============================== SHARED END GAME ============================== */
 
-const ACTIVITY_PERIODS = ['First Activity', 'Second Activity', 'Third Activity', 'Fourth Activity', 'Fifth Activity'];
+const ACTIVITY_PERIODS = ['First Activity', 'Second Activity', 'Third Activity', 'Fourth Activity'];
 
 function EndGameSheet({ open, onClose, sportLabel, teamA, teamB, scoreA, scoreB }) {
   const [activityPeriod, setActivityPeriod] = useLocalStorage('refcourt_activity_period_v1', 'First Activity');
@@ -777,7 +958,7 @@ function Home({ onSelect }) {
 const VB_KEY = 'refcourt_volleyball_v1';
 
 function defaultVolleyball() {
-  return { teamA: 'Team A', teamB: 'Team B', scoreA: 0, scoreB: 0, serving: 'A', streak: 0, set: 1 };
+  return { teamA: 'Team A', teamB: 'Team B', colorA: null, colorB: null, scoreA: 0, scoreB: 0, serving: 'A', streak: 0, set: 1 };
 }
 
 function Volleyball({ globalTimer, onBack }) {
@@ -822,12 +1003,14 @@ function Volleyball({ globalTimer, onBack }) {
           const serving = vb.serving === team;
           const name = team === 'A' ? vb.teamA : vb.teamB;
           const score = team === 'A' ? vb.scoreA : vb.scoreB;
+          const color = team === 'A' ? vb.colorA : vb.colorB;
+          const c = teamColorClasses(color);
           return (
             <button
               key={team}
               onClick={() => setServer(team)}
-              className={`btn-press rounded-3xl flex flex-col items-center justify-center py-8 gap-2 border-2 transition-colors ${
-                serving ? 'border-emerald-400 bg-emerald-400/10' : 'border-white/10 bg-zinc-900'
+              className={`btn-press rounded-3xl flex flex-col items-center justify-center py-8 gap-2 border-2 transition-colors ${c.bg} ${
+                serving ? 'border-emerald-400 ring-4 ring-emerald-400/40' : c.border
               }`}
             >
               {serving && (
@@ -835,12 +1018,12 @@ function Volleyball({ globalTimer, onBack }) {
                   <Icon name="CircleDot" size={12} /> SERVING
                 </div>
               )}
-              <div className="text-lg font-bold text-white/70 truncate max-w-full px-2">{name}</div>
-              <div className="text-7xl font-black tabular">{score}</div>
+              <div className={`text-lg font-bold ${c.text} opacity-70 truncate max-w-full px-2`}>{name}</div>
+              <div className={`text-7xl font-black tabular ${c.text}`}>{score}</div>
               <div
                 role="button"
                 onClick={(e) => { e.stopPropagation(); undo(team); }}
-                className="btn-press mt-2 w-10 h-10 rounded-full bg-white/10 flex items-center justify-center"
+                className={`btn-press mt-2 w-10 h-10 rounded-full ${c.overlay} ${c.text} flex items-center justify-center`}
               >
                 <Icon name="Minus" size={16} />
               </div>
@@ -861,12 +1044,22 @@ function Volleyball({ globalTimer, onBack }) {
       </div>
 
       <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Volleyball Settings">
-        <Field label="Team A Name">
-          <TextInput value={vb.teamA} onChange={(e) => setVb((s) => ({ ...s, teamA: e.target.value }))} maxLength={16} />
-        </Field>
-        <Field label="Team B Name">
-          <TextInput value={vb.teamB} onChange={(e) => setVb((s) => ({ ...s, teamB: e.target.value }))} maxLength={16} />
-        </Field>
+        <TeamPicker
+          label="Team A"
+          teamName={vb.teamA}
+          teamColor={vb.colorA}
+          onSelect={(t) => setVb((s) => ({ ...s, teamA: t.label, colorA: t.color }))}
+          onCustomName={(v) => setVb((s) => ({ ...s, teamA: v }))}
+          onCustomColor={(c) => setVb((s) => ({ ...s, colorA: c }))}
+        />
+        <TeamPicker
+          label="Team B"
+          teamName={vb.teamB}
+          teamColor={vb.colorB}
+          onSelect={(t) => setVb((s) => ({ ...s, teamB: t.label, colorB: t.color }))}
+          onCustomName={(v) => setVb((s) => ({ ...s, teamB: v }))}
+          onCustomColor={(c) => setVb((s) => ({ ...s, colorB: c }))}
+        />
         <BigButton onClick={newSet} className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white mb-3 flex items-center justify-center gap-2">
           <Icon name="RotateCcw" size={18} /> Start New Set
         </BigButton>
@@ -1011,18 +1204,22 @@ function Football({ globalTimer, onBack }) {
       </div>
 
       <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Football Settings">
-        <Field label="Team A Name">
-          <TextInput value={fb.teamA} onChange={(e) => setFb((s) => ({ ...s, teamA: e.target.value }))} maxLength={16} />
-        </Field>
-        <Field label="Team A Color">
-          <ColorPicker value={fb.colorA} onChange={(c) => setFb((s) => ({ ...s, colorA: c }))} />
-        </Field>
-        <Field label="Team B Name">
-          <TextInput value={fb.teamB} onChange={(e) => setFb((s) => ({ ...s, teamB: e.target.value }))} maxLength={16} />
-        </Field>
-        <Field label="Team B Color">
-          <ColorPicker value={fb.colorB} onChange={(c) => setFb((s) => ({ ...s, colorB: c }))} />
-        </Field>
+        <TeamPicker
+          label="Team A"
+          teamName={fb.teamA}
+          teamColor={fb.colorA}
+          onSelect={(t) => setFb((s) => ({ ...s, teamA: t.label, colorA: t.color }))}
+          onCustomName={(v) => setFb((s) => ({ ...s, teamA: v }))}
+          onCustomColor={(c) => setFb((s) => ({ ...s, colorA: c }))}
+        />
+        <TeamPicker
+          label="Team B"
+          teamName={fb.teamB}
+          teamColor={fb.colorB}
+          onSelect={(t) => setFb((s) => ({ ...s, teamB: t.label, colorB: t.color }))}
+          onCustomName={(v) => setFb((s) => ({ ...s, teamB: v }))}
+          onCustomColor={(c) => setFb((s) => ({ ...s, colorB: c }))}
+        />
         <Field label="Timeouts Reset">
           <Segmented
             options={[{ value: 'half', label: 'Per Half' }, { value: 'game', label: 'Per Game' }]}
@@ -1124,18 +1321,22 @@ function Universal({ sport, globalTimer, onBack }) {
       </div>
 
       <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title={`${cfg.title} Settings`}>
-        <Field label="Team A Name">
-          <TextInput value={g.teamA} onChange={(e) => setG((s) => ({ ...s, teamA: e.target.value }))} maxLength={16} />
-        </Field>
-        <Field label="Team A Color">
-          <ColorPicker value={g.colorA} onChange={(c) => setG((s) => ({ ...s, colorA: c }))} />
-        </Field>
-        <Field label="Team B Name">
-          <TextInput value={g.teamB} onChange={(e) => setG((s) => ({ ...s, teamB: e.target.value }))} maxLength={16} />
-        </Field>
-        <Field label="Team B Color">
-          <ColorPicker value={g.colorB} onChange={(c) => setG((s) => ({ ...s, colorB: c }))} />
-        </Field>
+        <TeamPicker
+          label="Team A"
+          teamName={g.teamA}
+          teamColor={g.colorA}
+          onSelect={(t) => setG((s) => ({ ...s, teamA: t.label, colorA: t.color }))}
+          onCustomName={(v) => setG((s) => ({ ...s, teamA: v }))}
+          onCustomColor={(c) => setG((s) => ({ ...s, colorA: c }))}
+        />
+        <TeamPicker
+          label="Team B"
+          teamName={g.teamB}
+          teamColor={g.colorB}
+          onSelect={(t) => setG((s) => ({ ...s, teamB: t.label, colorB: t.color }))}
+          onCustomName={(v) => setG((s) => ({ ...s, teamB: v }))}
+          onCustomColor={(c) => setG((s) => ({ ...s, colorB: c }))}
+        />
         <BigButton
           onClick={() => setG(defaultUniversal())}
           className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2 mb-3"
@@ -1255,18 +1456,22 @@ function Basketball({ globalTimer, onBack }) {
       </BigButton>
 
       <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Basketball Settings">
-        <Field label="Team A Name">
-          <TextInput value={bk.teamA} onChange={(e) => setBk((s) => ({ ...s, teamA: e.target.value }))} maxLength={16} />
-        </Field>
-        <Field label="Team A Color">
-          <ColorPicker value={bk.colorA} onChange={(c) => setBk((s) => ({ ...s, colorA: c }))} />
-        </Field>
-        <Field label="Team B Name">
-          <TextInput value={bk.teamB} onChange={(e) => setBk((s) => ({ ...s, teamB: e.target.value }))} maxLength={16} />
-        </Field>
-        <Field label="Team B Color">
-          <ColorPicker value={bk.colorB} onChange={(c) => setBk((s) => ({ ...s, colorB: c }))} />
-        </Field>
+        <TeamPicker
+          label="Team A"
+          teamName={bk.teamA}
+          teamColor={bk.colorA}
+          onSelect={(t) => setBk((s) => ({ ...s, teamA: t.label, colorA: t.color }))}
+          onCustomName={(v) => setBk((s) => ({ ...s, teamA: v }))}
+          onCustomColor={(c) => setBk((s) => ({ ...s, colorA: c }))}
+        />
+        <TeamPicker
+          label="Team B"
+          teamName={bk.teamB}
+          teamColor={bk.colorB}
+          onSelect={(t) => setBk((s) => ({ ...s, teamB: t.label, colorB: t.color }))}
+          onCustomName={(v) => setBk((s) => ({ ...s, teamB: v }))}
+          onCustomColor={(c) => setBk((s) => ({ ...s, colorB: c }))}
+        />
         <BigButton
           onClick={() => setBk(defaultBasketball())}
           className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2 mb-3"
