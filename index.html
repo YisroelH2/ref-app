@@ -110,7 +110,7 @@
 
 const { useState, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 
 /* ============================== ICONS ============================== */
 
@@ -208,6 +208,7 @@ function defaultAppSettings() {
     footballTimeouts: 3,
     volleyballRegularTarget: 16,
     volleyballDecidingTarget: 11,
+    whatsappPhone: '',
   };
 }
 
@@ -930,6 +931,7 @@ const ACTIVITY_PERIODS = ['First Activity', 'Second Activity', 'Third Activity',
 
 function EndGameSheet({ open, onClose, sportLabel, teamA, teamB, scoreA, scoreB }) {
   const [activityPeriod, setActivityPeriod] = useLocalStorage('refcourt_activity_period_v1', 'First Activity');
+  const [appSettings] = useLocalStorage(APP_SETTINGS_KEY, defaultAppSettings());
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -962,7 +964,11 @@ function EndGameSheet({ open, onClose, sportLabel, teamA, teamB, scoreA, scoreB 
   };
 
   const sendWhatsApp = () => {
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+    const phone = (appSettings.whatsappPhone || '').replace(/\D/g, '');
+    const url = phone
+      ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
+      : `https://wa.me/?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
   };
 
   return (
@@ -1049,6 +1055,20 @@ function VibrationTest() {
 function AppSettingsSheet({ open, onClose, settings, setSettings }) {
   return (
     <Sheet open={open} onClose={onClose} title="App Settings">
+      <Field label="Sports Director WhatsApp Phone #">
+        <TextInput
+          type="tel"
+          inputMode="tel"
+          value={settings.whatsappPhone}
+          onChange={(e) => setSettings((s) => ({ ...s, whatsappPhone: e.target.value }))}
+          placeholder="e.g. 15551234567 (with country code)"
+          maxLength={20}
+        />
+        <p className="text-white/30 text-xs mt-2 leading-relaxed">
+          Include the country code, digits only (no spaces or dashes). "Send to Bentzi" will message this number directly — leave blank to pick a contact each time.
+        </p>
+      </Field>
+
       <Field label="Appearance">
         <Segmented
           options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }]}
@@ -1551,7 +1571,18 @@ const UNIVERSAL_CONFIG = {
 };
 
 function defaultUniversal() {
-  return { teamA: 'Team A', teamB: 'Team B', scoreA: 0, scoreB: 0, colorA: null, colorB: null, period: 1, half: 'Top', topTeam: 'A' };
+  return { teamA: 'Team A', teamB: 'Team B', scoreA: 0, scoreB: 0, colorA: null, colorB: null, period: 1, half: 'Top', topTeam: 'A', balls: 0, strikes: 0, outs: 0 };
+}
+
+const AT_BAT_BANNER_STYLES = {
+  'WALK!': 'bg-emerald-400 text-black',
+  'STRIKE OUT!': 'bg-yellow-400 text-black',
+  'SIDE RETIRED!': 'bg-red-500 text-white',
+};
+
+function advanceHalfInning(s) {
+  if (s.half === 'Top') return { ...s, half: 'Bottom' };
+  return { ...s, half: 'Top', period: s.period + 1 };
 }
 
 function Universal({ sport, globalTimer, onBack }) {
@@ -1580,8 +1611,75 @@ function Universal({ sport, globalTimer, onBack }) {
   const battingTeam = g.half === 'Top' ? topTeam : (topTeam === 'A' ? 'B' : 'A');
   const battingTeamName = battingTeam === 'A' ? g.teamA : g.teamB;
 
+  const [bannerQueue, setBannerQueue] = useState([]);
+  const [banner, setBanner] = useState(null);
+  const pushBanner = (text) => setBannerQueue((q) => [...q, text]);
+
+  useEffect(() => {
+    if (!banner && bannerQueue.length > 0) {
+      setBanner(bannerQueue[0]);
+      setBannerQueue((q) => q.slice(1));
+    }
+  }, [banner, bannerQueue]);
+
+  useEffect(() => {
+    if (!banner) return;
+    const t = setTimeout(() => setBanner(null), 1500);
+    return () => clearTimeout(t);
+  }, [banner]);
+
+  const addBall = () => {
+    vibrate(20);
+    setG((s) => {
+      const balls = (s.balls || 0) + 1;
+      if (balls >= 4) {
+        pushBanner('WALK!');
+        return { ...s, balls: 0, strikes: 0 };
+      }
+      return { ...s, balls };
+    });
+  };
+
+  const addStrike = () => {
+    vibrate(20);
+    setG((s) => {
+      const strikes = (s.strikes || 0) + 1;
+      if (strikes >= 3) {
+        pushBanner('STRIKE OUT!');
+        const outs = (s.outs || 0) + 1;
+        if (outs >= 3) {
+          pushBanner('SIDE RETIRED!');
+          return advanceHalfInning({ ...s, balls: 0, strikes: 0, outs: 0 });
+        }
+        return { ...s, balls: 0, strikes: 0, outs };
+      }
+      return { ...s, strikes };
+    });
+  };
+
+  const addOut = () => {
+    vibrate(20);
+    setG((s) => {
+      const outs = (s.outs || 0) + 1;
+      if (outs >= 3) {
+        pushBanner('SIDE RETIRED!');
+        return advanceHalfInning({ ...s, balls: 0, strikes: 0, outs: 0 });
+      }
+      return { ...s, balls: 0, strikes: 0, outs };
+    });
+  };
+
+  const resetCount = () => setG((s) => ({ ...s, balls: 0, strikes: 0 }));
+
   return (
     <div className="px-5 pt-6 pb-8 max-w-md mx-auto flex flex-col min-h-[100dvh]">
+      {banner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 pointer-events-none">
+          <div className={`pop-in rounded-3xl px-10 py-8 text-4xl font-black tracking-wide text-center shadow-2xl ${AT_BAT_BANNER_STYLES[banner] || 'bg-white text-black'}`}>
+            {banner}
+          </div>
+        </div>
+      )}
       <EndGamePill onClick={() => setEndGameOpen(true)} />
       <Header title={cfg.title} onBack={onBack} onSettings={() => setSettingsOpen(true)} />
       {sport !== 'baseball' && <TimerBar globalTimer={globalTimer} />}
@@ -1613,6 +1711,46 @@ function Universal({ sport, globalTimer, onBack }) {
             {g.half.toUpperCase()} &middot; {battingTeamName} BATTING
           </span>
         </button>
+      )}
+
+      {sport === 'baseball' && (
+        <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 px-4 mt-3">
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            {[
+              { key: 'balls', label: 'BALLS (B)', count: g.balls || 0, max: 4, dot: 'bg-emerald-400 border-emerald-400' },
+              { key: 'strikes', label: 'STRIKES (S)', count: g.strikes || 0, max: 3, dot: 'bg-yellow-400 border-yellow-400' },
+              { key: 'outs', label: 'OUTS (O)', count: g.outs || 0, max: 3, dot: 'bg-red-500 border-red-500' },
+            ].map((c) => (
+              <div key={c.key} className="flex flex-col items-center gap-2">
+                <div className="text-[9px] font-extrabold tracking-widest text-white/40 text-center">{c.label}</div>
+                <div className="flex gap-1.5">
+                  {Array.from({ length: c.max }).map((_, i) => (
+                    <div key={i} className={`w-4 h-4 rounded-full border-2 ${i < c.count ? c.dot : 'border-white/25 bg-transparent'}`} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 mb-2">
+            <BigButton onClick={addBall} className="rounded-2xl bg-emerald-400/15 border-2 border-emerald-400/40 text-emerald-400 py-5 font-extrabold text-sm">
+              +BALL
+            </BigButton>
+            <BigButton onClick={addStrike} className="rounded-2xl bg-yellow-400/15 border-2 border-yellow-400/40 text-yellow-400 py-5 font-extrabold text-sm">
+              +STRIKE
+            </BigButton>
+            <BigButton onClick={addOut} className="rounded-2xl bg-red-500/15 border-2 border-red-500/40 text-red-400 py-5 font-extrabold text-sm">
+              +OUT
+            </BigButton>
+          </div>
+
+          <BigButton
+            onClick={resetCount}
+            className="w-full rounded-xl bg-white/5 border border-white/10 py-2.5 text-white/40 font-bold text-xs flex items-center justify-center gap-1.5"
+          >
+            <Icon name="RotateCcw" size={12} /> RESET COUNT
+          </BigButton>
+        </div>
       )}
 
       <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title={`${cfg.title} Settings`}>
