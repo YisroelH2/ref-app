@@ -94,7 +94,7 @@
 
 const { useState, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 /* ============================== ICONS ============================== */
 
@@ -472,6 +472,7 @@ function defaultTimer() {
     endLabel: '',
     halfMs: 0,
     currentHalf: 1,
+    totalHalves: 2,
     periodEndTs: 0,
     isRunning: false,
     pausedRemainingMs: 0,
@@ -498,11 +499,11 @@ function useGlobalTimer() {
   useEffect(() => {
     if (!timer.configured || !timer.isRunning || timer.finished) return;
     if (remainingMs <= 0) {
-      if (timer.currentHalf === 1) {
+      if (timer.currentHalf < timer.totalHalves) {
         vibrate([180, 100, 180]);
         setTimer((t) => ({
           ...t,
-          currentHalf: 2,
+          currentHalf: t.currentHalf + 1,
           periodEndTs: Date.now() + t.halfMs,
           pausedRemainingMs: t.halfMs,
         }));
@@ -511,7 +512,7 @@ function useGlobalTimer() {
         setTimer((t) => ({ ...t, finished: true, isRunning: false, pausedRemainingMs: 0 }));
       }
     }
-  }, [remainingMs, timer.configured, timer.isRunning, timer.finished, timer.currentHalf, setTimer]);
+  }, [remainingMs, timer.configured, timer.isRunning, timer.finished, timer.currentHalf, timer.totalHalves, setTimer]);
 
   const warnBucketRef = useRef(null);
   useEffect(() => {
@@ -546,6 +547,7 @@ function useGlobalTimer() {
       endLabel: label,
       halfMs: half,
       currentHalf: 1,
+      totalHalves: 2,
       periodEndTs: now + half,
       isRunning: true,
       pausedRemainingMs: half,
@@ -561,9 +563,10 @@ function useGlobalTimer() {
     setTimer({
       configured: true,
       mode: 'manual',
-      endLabel: `Manual · ${minutes} min halves`,
+      endLabel: `Manual · ${minutes} min`,
       halfMs: half,
       currentHalf: 1,
+      totalHalves: 1,
       periodEndTs: now + half,
       isRunning: true,
       pausedRemainingMs: half,
@@ -706,9 +709,9 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupManual, initialMod
       ) : (
         <>
           <p className="text-white/50 text-sm mb-5 leading-relaxed">
-            Enter the length of each half or period in minutes. The timer counts down from there — tap it to pause or resume.
+            Enter how long this period should run. It counts down once — tap it to pause or resume.
           </p>
-          <Field label="Period length (minutes)">
+          <Field label="Length (minutes)">
             <input
               type="number"
               inputMode="numeric"
@@ -795,7 +798,7 @@ function TimerBar({ globalTimer }) {
       >
         <div className="text-left">
           <div className={`text-xs font-extrabold tracking-widest ${isRunning ? 'text-emerald-400' : 'text-red-400'}`}>
-            HALF {timer.currentHalf} {isRunning ? '· RUNNING' : '· PAUSED'}
+            {timer.totalHalves > 1 ? `HALF ${timer.currentHalf} ` : ''}{isRunning ? '· RUNNING' : '· PAUSED'}
           </div>
           <div className={`text-4xl font-black tabular ${isRunning ? 'text-white' : 'text-red-400'}`}>
             {formatClock(seconds)}
