@@ -94,7 +94,7 @@
 
 const { useState, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 
 /* ============================== ICONS ============================== */
 
@@ -388,6 +388,7 @@ function searchCampTeams(query) {
 function TeamPicker({ label, teamName, teamColor, onSelect, onCustomName, onCustomColor }) {
   const [query, setQuery] = useState(teamName || '');
   const [open, setOpen] = useState(false);
+  const [colorOpen, setColorOpen] = useState(false);
 
   useEffect(() => { setQuery(teamName || ''); }, [teamName]);
 
@@ -437,7 +438,24 @@ function TeamPicker({ label, teamName, teamColor, onSelect, onCustomName, onCust
         These are just suggestions — type any name and hit enter.
       </p>
       <div className="mt-3">
-        <ColorPicker value={teamColor} onChange={onCustomColor} />
+        <button
+          type="button"
+          onClick={() => setColorOpen((o) => !o)}
+          className="btn-press w-full flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-3 py-2.5"
+        >
+          <span className={`w-5 h-5 rounded-full shrink-0 ${teamColorClasses(teamColor).bg} border border-white/20`} />
+          <span className="text-sm font-bold text-white/70">Change Color</span>
+          <Icon
+            name="ChevronRight"
+            size={14}
+            className={`text-white/30 ml-auto transition-transform ${colorOpen ? 'rotate-90' : ''}`}
+          />
+        </button>
+        {colorOpen && (
+          <div className="mt-3">
+            <ColorPicker value={teamColor} onChange={onCustomColor} />
+          </div>
+        )}
       </div>
     </Field>
   );
@@ -1030,14 +1048,17 @@ function Volleyball({ globalTimer, onBack }) {
   const setServer = (team) => setVb((s) => ({ ...s, serving: team, streak: 0 }));
 
   const spTarget = vb.target || 25;
-  const aSetPoint = vb.scoreA >= spTarget - 1 && (vb.scoreA - vb.scoreB) >= 1;
-  const bSetPoint = vb.scoreB >= spTarget - 1 && (vb.scoreB - vb.scoreA) >= 1;
+  const serverScore = vb.serving === 'A' ? vb.scoreA : vb.scoreB;
+  const receiverScore = vb.serving === 'A' ? vb.scoreB : vb.scoreA;
+  const serverName = vb.serving === 'A' ? vb.teamA : vb.teamB;
+  const pointServeActive = serverScore >= spTarget - 1 && (serverScore - receiverScore) >= 1;
+  const winByTwo = Math.min(vb.scoreA, vb.scoreB) >= spTarget - 1;
+  const bannerText = pointServeActive ? `${serverName} ${winByTwo ? 'WINS BY 2' : 'POINT SERVE'}` : null;
   const setPointRef = useRef(false);
   useEffect(() => {
-    const active = aSetPoint || bSetPoint;
-    if (active && !setPointRef.current) vibrate(40);
-    setPointRef.current = active;
-  }, [aSetPoint, bSetPoint]);
+    if (pointServeActive && !setPointRef.current) vibrate(40);
+    setPointRef.current = pointServeActive;
+  }, [pointServeActive]);
 
   const setsWonA = (vb.setHistory || []).filter((w) => w === 'A').length;
   const setsWonB = (vb.setHistory || []).filter((w) => w === 'B').length;
@@ -1057,9 +1078,9 @@ function Volleyball({ globalTimer, onBack }) {
         SETS &middot; {vb.teamA} {setsWonA} &ndash; {setsWonB} {vb.teamB}
       </div>
 
-      {(aSetPoint || bSetPoint) && (
+      {bannerText && (
         <div className="mb-3 rounded-2xl bg-yellow-400 text-black text-center py-2.5 font-extrabold text-sm tracking-widest animate-pulse-fast">
-          {aSetPoint ? vb.teamA : vb.teamB} SET POINT
+          {bannerText}
         </div>
       )}
 
@@ -1074,8 +1095,8 @@ function Volleyball({ globalTimer, onBack }) {
             <button
               key={team}
               onClick={() => setServer(team)}
-              className={`btn-press rounded-3xl flex flex-col items-center justify-center py-8 gap-2 border-2 transition-colors ${c.bg} ${
-                serving ? 'border-emerald-400 ring-4 ring-emerald-400/40' : c.border
+              className={`btn-press rounded-3xl flex flex-col items-center justify-center py-8 gap-2 transition-colors ${c.bg} ${
+                serving ? 'border-4 border-emerald-400 ring-4 ring-emerald-400/40' : `border-2 ${c.border}`
               }`}
             >
               {serving && (
@@ -1139,7 +1160,7 @@ function Volleyball({ globalTimer, onBack }) {
             className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-3 text-2xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
           />
           <p className="text-white/30 text-xs mt-2 leading-relaxed">
-            We'll flag "Set Point" once a team could win the set on the next rally (win-by-two respected).
+            We'll flag "Point Serve" when the serving team can win the set on this serve — and "Wins By 2" once both teams are close enough that the win-by-two rule is in play.
           </p>
         </Field>
         <BigButton onClick={switchSides} className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white mb-3 flex items-center justify-center gap-2">
