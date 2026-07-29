@@ -84,8 +84,9 @@
   }
   .pop-in { animation: popIn 0.15s ease-out; }
 
-  .btn-press { transition: transform 0.08s ease, background-color 0.15s ease, opacity 0.15s ease; }
+  .btn-press { transition: transform 0.08s ease, background-color 0.15s ease, opacity 0.15s ease; touch-action: manipulation; -webkit-touch-callout: none; }
   .btn-press:active { transform: scale(0.95); }
+  button, [role="button"], input[type="number"], input[type="tel"] { touch-action: manipulation; }
 
   html.light-mode {
     filter: invert(1) hue-rotate(180deg);
@@ -110,7 +111,7 @@
 
 const { useState, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.8.0';
 
 /* ============================== ICONS ============================== */
 
@@ -235,6 +236,7 @@ function defaultAppSettings() {
     volleyballRegularTarget: 16,
     volleyballDecidingTarget: 11,
     whatsappPhone: '',
+    volleyballTapToScore: false,
   };
 }
 
@@ -386,6 +388,10 @@ function teamColorClasses(colorId) {
   return { bg: preset.bg, border: preset.border, text: preset.text, sub: preset.sub, overlay: preset.overlay };
 }
 
+function displayTeamName(name, which) {
+  return name && name.trim() ? name : (which === 'A' ? 'Team A' : 'Team B');
+}
+
 function ColorPicker({ value, onChange }) {
   return (
     <div className="flex flex-wrap gap-3">
@@ -454,7 +460,18 @@ function searchCampTeams(query) {
   if (!q) return CAMP_TEAMS;
   const threshold = Math.max(2, Math.ceil(q.length * 0.5));
   return CAMP_TEAMS
-    .map((t) => ({ team: t, score: Math.min(fuzzyDistance(q, t.city), fuzzyDistance(q, t.counselor), fuzzyDistance(q, t.label)) }))
+    .map((t) => {
+      const colorLabel = (TEAM_COLOR_PRESETS.find((c) => c.id === t.color) || {}).label || t.color;
+      return {
+        team: t,
+        score: Math.min(
+          fuzzyDistance(q, t.city),
+          fuzzyDistance(q, t.counselor),
+          fuzzyDistance(q, t.label),
+          fuzzyDistance(q, colorLabel)
+        ),
+      };
+    })
     .filter((s) => s.score <= threshold)
     .sort((a, b) => a.score - b.score)
     .map((s) => s.team);
@@ -576,14 +593,21 @@ function useGlobalTimer() {
   useEffect(() => {
     if (!timer.configured || !timer.isRunning || timer.finished) return;
     if (remainingMs <= 0) {
-      if (timer.currentHalf < timer.totalHalves) {
+      // Use unclamped overshoot (not the clamped remainingMs) so a backgrounded/throttled
+      // tab that wakes up long after this half should have ended doesn't get handed a
+      // brand-new full-length next half — it looks like the clock silently "reset."
+      const overshoot = Math.max(0, Date.now() - timer.periodEndTs);
+      if (timer.currentHalf < timer.totalHalves && overshoot < timer.halfMs) {
         vibrate([180, 100, 180]);
-        setTimer((t) => ({
-          ...t,
-          currentHalf: t.currentHalf + 1,
-          periodEndTs: Date.now() + t.halfMs,
-          pausedRemainingMs: t.halfMs,
-        }));
+        setTimer((t) => {
+          const remaining = Math.max(0, t.halfMs - overshoot);
+          return {
+            ...t,
+            currentHalf: t.currentHalf + 1,
+            periodEndTs: Date.now() + remaining,
+            pausedRemainingMs: remaining,
+          };
+        });
       } else {
         vibrate([250, 120, 250, 120, 250]);
         setTimer((t) => ({ ...t, finished: true, isRunning: false, pausedRemainingMs: 0 }));
@@ -904,6 +928,34 @@ function TimerBar({ globalTimer }) {
   const [setupOpen, setSetupOpen] = useState(false);
   const [driftDismissed, setDriftDismissed] = useState(false);
   const driftShownRef = useRef(false);
+  const pressTimerRef = useRef(null);
+  const longPressFiredRef = useRef(false);
+
+  const clearPressTimer = () => {
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+  };
+
+  const handlePillPointerDown = () => {
+    longPressFiredRef.current = false;
+    clearPressTimer();
+    pressTimerRef.current = setTimeout(() => {
+      longPressFiredRef.current = true;
+      vibrate(40);
+      setSetupOpen(true);
+    }, 550);
+  };
+
+  const handlePillPointerUp = () => {
+    clearPressTimer();
+    if (!longPressFiredRef.current) toggle();
+  };
+
+  const handlePillPointerLeave = () => {
+    clearPressTimer();
+  };
 
   useEffect(() => {
     setDriftDismissed(false);
@@ -972,7 +1024,11 @@ function TimerBar({ globalTimer }) {
   return (
     <div className="mb-4">
       <button
-        onClick={toggle}
+        onPointerDown={handlePillPointerDown}
+        onPointerUp={handlePillPointerUp}
+        onPointerLeave={handlePillPointerLeave}
+        onPointerCancel={handlePillPointerLeave}
+        onContextMenu={(e) => e.preventDefault()}
         className={`btn-press w-full rounded-2xl border-2 py-4 px-5 flex items-center justify-between transition-colors ${
           isRunning ? 'border-emerald-400/40 bg-emerald-400/5' : 'border-red-500 bg-red-500/10 animate-pulse-fast'
         }`}
@@ -1013,9 +1069,9 @@ function TimerBar({ globalTimer }) {
       )}
 
       <div className="flex justify-end mt-1.5">
-        <button onClick={() => setSetupOpen(true)} className="text-white/30 text-xs font-semibold flex items-center gap-1 py-1 px-2">
-          <Icon name="Settings" size={12} /> {timer.endLabel}
-        </button>
+        <div className="text-white/30 text-xs font-semibold flex items-center gap-1 py-1 px-2">
+          <Icon name="Clock" size={12} /> {timer.endLabel} · hold clock to adjust
+        </div>
       </div>
       <TimerSetupSheet
         open={setupOpen}
@@ -1067,10 +1123,10 @@ function ScoreHalf({ name, score, onScore, onUndo, footer, scoreClassName = 'tex
   return (
     <button
       onClick={onScore}
-      className={`btn-press flex-1 rounded-3xl ${c.bg} border-2 ${c.border} flex flex-col items-center justify-center gap-2 relative overflow-hidden py-4`}
+      className={`btn-press flex-1 rounded-3xl ${c.bg} border-2 ${c.border} flex flex-col items-center justify-center gap-2 relative overflow-hidden py-4 px-4`}
     >
-      <div className={`absolute top-3 left-3 ${c.sub} text-xs font-extrabold tracking-widest`}>TAP TO SCORE</div>
-      <div className={`text-lg font-bold ${c.text} opacity-70 truncate max-w-[90%]`}>{name}</div>
+      <div className={`${c.sub} text-xs font-extrabold tracking-widest self-start`}>TAP TO SCORE</div>
+      <div className={`text-lg font-bold ${c.text} opacity-70 text-center truncate max-w-full`}>{name}</div>
       <div className={`${scoreClassName} font-black tabular ${c.text}`}>{score}</div>
       {footer}
       <div
@@ -1088,7 +1144,9 @@ function ScoreHalf({ name, score, onScore, onUndo, footer, scoreClassName = 'tex
 
 const ACTIVITY_PERIODS = CAMP_SCHEDULE.map((s) => s.label);
 
-function EndGameSheet({ open, onClose, sportLabel, teamA, teamB, scoreA, scoreB, globalTimer }) {
+function EndGameSheet({ open, onClose, sportLabel, teamA: teamARaw, teamB: teamBRaw, scoreA, scoreB, globalTimer }) {
+  const teamA = displayTeamName(teamARaw, 'A');
+  const teamB = displayTeamName(teamBRaw, 'B');
   const [activityPeriod, setActivityPeriodState] = useState(ACTIVITY_PERIODS[0]);
   const [appSettings] = useLocalStorage(APP_SETTINGS_KEY, defaultAppSettings());
   const [copied, setCopied] = useState(false);
@@ -1285,9 +1343,20 @@ function AppSettingsSheet({ open, onClose, settings, setSettings }) {
           />
         </Field>
       </div>
-      <p className="text-white/30 text-xs mt-2 leading-relaxed">
+      <p className="text-white/30 text-xs mt-2 mb-5 leading-relaxed">
         These are the starting defaults for new games — each sport's own settings can still override them for that game.
       </p>
+
+      <Field label="Volleyball · Tap Server to Score">
+        <Segmented
+          options={[{ value: false, label: 'Off' }, { value: true, label: 'On' }]}
+          value={settings.volleyballTapToScore}
+          onChange={(v) => setSettings((s) => ({ ...s, volleyballTapToScore: v }))}
+        />
+        <p className="text-white/30 text-xs mt-2 leading-relaxed">
+          When on, tapping the team that's already serving adds a point. Tapping the other team still just switches serve (side out) — tap it again once they're serving to score.
+        </p>
+      </Field>
     </Sheet>
   );
 }
@@ -1298,7 +1367,7 @@ function Home({ onSelect, settings, setSettings }) {
   return (
     <div className="px-5 pt-6 pb-8 max-w-md mx-auto flex flex-col min-h-[100dvh]">
       <div className="flex items-center justify-between mb-1">
-        <div className="text-3xl font-black tracking-tight">YKP-refs</div>
+        <div className="text-3xl font-black tracking-tight">YKP-Refs</div>
         <LiveClock className="text-white/40 text-sm font-bold tabular" />
       </div>
       <div className="text-white/40 text-sm font-semibold mb-7">Camp Sports Referee Toolkit</div>
@@ -1353,7 +1422,7 @@ const VB_KEY = 'refcourt_volleyball_v1';
 function defaultVolleyball() {
   const s = getAppSettings();
   return {
-    teamA: 'Team A', teamB: 'Team B', colorA: null, colorB: null, scoreA: 0, scoreB: 0, serving: 'A', streak: 0, set: 1,
+    teamA: '', teamB: '', colorA: null, colorB: null, scoreA: 0, scoreB: 0, serving: 'A', streak: 0, set: 1,
     regularTarget: s.volleyballRegularTarget,
     decidingTarget: s.volleyballDecidingTarget,
     setHistory: [],
@@ -1362,6 +1431,7 @@ function defaultVolleyball() {
 
 function Volleyball({ globalTimer, onBack }) {
   const [vb, setVb] = useLocalStorage(VB_KEY, defaultVolleyball());
+  const [appSettings] = useLocalStorage(APP_SETTINGS_KEY, defaultAppSettings());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [endGameOpen, setEndGameOpen] = useState(false);
 
@@ -1398,10 +1468,18 @@ function Volleyball({ globalTimer, onBack }) {
 
   const setServer = (team) => setVb((s) => ({ ...s, serving: team, streak: 0 }));
 
+  const tapTeam = (team) => {
+    if (appSettings.volleyballTapToScore && vb.serving === team) {
+      point();
+    } else {
+      setServer(team);
+    }
+  };
+
   const spTarget = vb.set >= 3 ? (vb.decidingTarget || 11) : (vb.regularTarget || 16);
   const serverScore = vb.serving === 'A' ? vb.scoreA : vb.scoreB;
   const receiverScore = vb.serving === 'A' ? vb.scoreB : vb.scoreA;
-  const serverName = vb.serving === 'A' ? vb.teamA : vb.teamB;
+  const serverName = displayTeamName(vb.serving === 'A' ? vb.teamA : vb.teamB, vb.serving);
   const pointServeActive = serverScore >= spTarget - 1 && (serverScore - receiverScore) >= 1;
   const winByTwo = Math.min(vb.scoreA, vb.scoreB) >= spTarget - 1;
   const bannerText = pointServeActive ? `${serverName} ${winByTwo ? 'WINS BY 2' : 'POINT SERVE'}` : null;
@@ -1426,7 +1504,7 @@ function Volleyball({ globalTimer, onBack }) {
       </div>
 
       <div className="text-center text-white/50 text-xs font-bold mb-3">
-        SETS &middot; {vb.teamA} {setsWonA} &ndash; {setsWonB} {vb.teamB}
+        SETS &middot; {displayTeamName(vb.teamA, 'A')} {setsWonA} &ndash; {setsWonB} {displayTeamName(vb.teamB, 'B')}
       </div>
 
       {bannerText && (
@@ -1438,14 +1516,14 @@ function Volleyball({ globalTimer, onBack }) {
       <div className="grid grid-cols-2 gap-3 mb-4 flex-1">
         {['A', 'B'].map((team) => {
           const serving = vb.serving === team;
-          const name = team === 'A' ? vb.teamA : vb.teamB;
+          const name = displayTeamName(team === 'A' ? vb.teamA : vb.teamB, team);
           const score = team === 'A' ? vb.scoreA : vb.scoreB;
           const color = team === 'A' ? vb.colorA : vb.colorB;
           const c = teamColorClasses(color);
           return (
             <button
               key={team}
-              onClick={() => setServer(team)}
+              onClick={() => tapTeam(team)}
               className={`btn-press rounded-3xl flex flex-col items-center justify-center py-8 gap-2 transition-colors ${c.bg} ${
                 serving ? 'border-4 border-emerald-400 ring-4 ring-emerald-400/40' : `border-2 ${c.border}`
               }`}
@@ -1565,7 +1643,7 @@ const FB_KEY = 'refcourt_football_v1';
 function defaultFootball() {
   const to = getAppSettings().footballTimeouts;
   return {
-    teamA: 'Team A', teamB: 'Team B', scoreA: 0, scoreB: 0,
+    teamA: '', teamB: '', scoreA: 0, scoreB: 0,
     colorA: null, colorB: null,
     timeoutMode: 'half', timeoutCount: to,
     timeoutsA: to, timeoutsB: to,
@@ -1648,7 +1726,7 @@ function Football({ globalTimer, onBack }) {
 
       <div className="flex flex-col gap-3 flex-1 mb-4" style={{ minHeight: '48vh' }}>
         <ScoreHalf
-          name={fb.teamA}
+          name={displayTeamName(fb.teamA, 'A')}
           score={fb.scoreA}
           onScore={() => addPoint('A')}
           onUndo={() => undo('A')}
@@ -1657,7 +1735,7 @@ function Football({ globalTimer, onBack }) {
           color={fb.colorA}
         />
         <ScoreHalf
-          name={fb.teamB}
+          name={displayTeamName(fb.teamB, 'B')}
           score={fb.scoreB}
           onScore={() => addPoint('B')}
           onUndo={() => undo('B')}
@@ -1742,7 +1820,7 @@ const UNIVERSAL_CONFIG = {
 };
 
 function defaultUniversal() {
-  return { teamA: 'Team A', teamB: 'Team B', scoreA: 0, scoreB: 0, colorA: null, colorB: null, period: 1, half: 'Top', topTeam: 'A', balls: 0, strikes: 0, outs: 0 };
+  return { teamA: '', teamB: '', scoreA: 0, scoreB: 0, colorA: null, colorB: null, period: 1, half: 'Top', topTeam: 'A', balls: 0, strikes: 0, outs: 0 };
 }
 
 const AT_BAT_BANNER_STYLES = {
@@ -1772,7 +1850,11 @@ function Universal({ sport, globalTimer, onBack }) {
   };
 
   const changePeriod = (delta) => {
-    setG((s) => ({ ...s, period: Math.max(1, s.period + delta) }));
+    setG((s) => {
+      const next = s.period + delta;
+      const clamped = sport === 'soccer' ? Math.min(cfg.maxUnit, Math.max(1, next)) : Math.max(1, next);
+      return { ...s, period: clamped };
+    });
   };
 
   const toggleHalf = () => setG((s) => ({ ...s, half: s.half === 'Top' ? 'Bottom' : 'Top' }));
@@ -1780,7 +1862,7 @@ function Universal({ sport, globalTimer, onBack }) {
 
   const topTeam = g.topTeam || 'A';
   const battingTeam = g.half === 'Top' ? topTeam : (topTeam === 'A' ? 'B' : 'A');
-  const battingTeamName = battingTeam === 'A' ? g.teamA : g.teamB;
+  const battingTeamName = displayTeamName(battingTeam === 'A' ? g.teamA : g.teamB, battingTeam);
 
   const [bannerQueue, setBannerQueue] = useState([]);
   const [banner, setBanner] = useState(null);
@@ -1856,8 +1938,8 @@ function Universal({ sport, globalTimer, onBack }) {
       {sport !== 'baseball' && <TimerBar globalTimer={globalTimer} />}
 
       <div className="flex flex-col gap-3 flex-1 mb-4" style={{ minHeight: '48vh' }}>
-        <ScoreHalf name={g.teamA} score={g.scoreA} onScore={() => addPoint('A')} onUndo={() => undo('A')} color={g.colorA} />
-        <ScoreHalf name={g.teamB} score={g.scoreB} onScore={() => addPoint('B')} onUndo={() => undo('B')} color={g.colorB} />
+        <ScoreHalf name={displayTeamName(g.teamA, 'A')} score={g.scoreA} onScore={() => addPoint('A')} onUndo={() => undo('A')} color={g.colorA} />
+        <ScoreHalf name={displayTeamName(g.teamB, 'B')} score={g.scoreB} onScore={() => addPoint('B')} onUndo={() => undo('B')} color={g.colorB} />
       </div>
 
       <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 px-5 flex items-center justify-between">
@@ -1976,7 +2058,7 @@ function Universal({ sport, globalTimer, onBack }) {
 const BK_KEY = 'refcourt_basketball_v1';
 
 function defaultBasketball() {
-  return { teamA: 'Team A', teamB: 'Team B', scoreA: 0, scoreB: 0, colorA: null, colorB: null, half: 1, periodMode: 'halves', history: [] };
+  return { teamA: '', teamB: '', scoreA: 0, scoreB: 0, colorA: null, colorB: null, half: 1, periodMode: 'halves', history: [] };
 }
 
 function Basketball({ globalTimer, onBack }) {
@@ -2014,7 +2096,7 @@ function Basketball({ globalTimer, onBack }) {
   const lastAction = bk.history[bk.history.length - 1];
 
   const TeamSide = ({ team }) => {
-    const name = team === 'A' ? bk.teamA : bk.teamB;
+    const name = displayTeamName(team === 'A' ? bk.teamA : bk.teamB, team);
     const score = team === 'A' ? bk.scoreA : bk.scoreB;
     const color = team === 'A' ? bk.colorA : bk.colorB;
     const c = teamColorClasses(color);
@@ -2031,14 +2113,14 @@ function Basketball({ globalTimer, onBack }) {
         <div className={`text-lg font-bold ${c.text} opacity-70 truncate max-w-full`}>{name}</div>
         <div className={`text-7xl font-black tabular ${c.text}`}>{score}</div>
         <div className="grid grid-cols-3 gap-2 w-full">
-          <BigButton onClick={() => addScore(team, 1)} className={`rounded-2xl ${c.overlay} ${c.text} py-5 font-extrabold text-lg flex flex-col items-center gap-0.5`}>
+          <BigButton onClick={() => addScore(team, 1)} className={`relative rounded-2xl ${c.overlay} ${c.text} py-5 font-extrabold text-lg flex items-center justify-center`}>
             <span>+1</span>
-            <span className={`text-[9px] font-bold ${c.sub} tracking-widest`}>FT</span>
+            <span className={`absolute bottom-1.5 text-[9px] font-bold ${c.sub} tracking-widest`}>FT</span>
           </BigButton>
-          <BigButton onClick={() => addScore(team, 2)} className={`rounded-2xl ${c.overlay} ${c.text} py-5 font-extrabold text-lg`}>
+          <BigButton onClick={() => addScore(team, 2)} className={`rounded-2xl ${c.overlay} ${c.text} py-5 font-extrabold text-lg flex items-center justify-center`}>
             +2
           </BigButton>
-          <BigButton onClick={() => addScore(team, 3)} className={`rounded-2xl ${c.overlay} ${c.text} border-2 border-white/30 py-5 font-extrabold text-lg`}>
+          <BigButton onClick={() => addScore(team, 3)} className={`rounded-2xl ${c.overlay} ${c.text} border-2 border-white/30 py-5 font-extrabold text-lg flex items-center justify-center`}>
             +3
           </BigButton>
         </div>
@@ -2074,7 +2156,7 @@ function Basketball({ globalTimer, onBack }) {
         className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white/80 flex items-center justify-center gap-2"
       >
         <Icon name="RotateCcw" size={18} />
-        {lastAction ? `Undo +${lastAction.pts} · ${lastAction.team === 'A' ? bk.teamA : bk.teamB}` : 'Undo Last Score'}
+        {lastAction ? `Undo +${lastAction.pts} · ${displayTeamName(lastAction.team === 'A' ? bk.teamA : bk.teamB, lastAction.team)}` : 'Undo Last Score'}
       </BigButton>
 
       <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Basketball Settings">
