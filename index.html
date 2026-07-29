@@ -111,7 +111,7 @@
 
 const { useState, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.9.0';
 
 /* ============================== ICONS ============================== */
 
@@ -1426,7 +1426,68 @@ function defaultVolleyball() {
     regularTarget: s.volleyballRegularTarget,
     decidingTarget: s.volleyballDecidingTarget,
     setHistory: [],
+    usedPointServeA: false,
+    usedPointServeB: false,
   };
+}
+
+function volleyballTarget(s) {
+  return s.set >= 3 ? (s.decidingTarget || 11) : (s.regularTarget || 16);
+}
+
+function pointServeEligibility(s) {
+  const target = volleyballTarget(s);
+  const aEligible = s.serving === 'A' && !s.usedPointServeA && (s.scoreA + 1 >= target) && ((s.scoreA + 1) - s.scoreB >= 2);
+  const bEligible = s.serving === 'B' && !s.usedPointServeB && (s.scoreB + 1 >= target) && ((s.scoreB + 1) - s.scoreA >= 2);
+  return { aEligible, bEligible };
+}
+
+function VolleyballSetTracker({ vb, teamADisplay, teamBDisplay, onAdvanceSet }) {
+  const setHistory = vb.setHistory || [];
+  const setsWonA = setHistory.filter((w) => w === teamADisplay).length;
+  const setsWonB = setHistory.filter((w) => w === teamBDisplay).length;
+  const matchOver = setsWonA >= 2 || setsWonB >= 2;
+
+  return (
+    <div className="rounded-2xl bg-zinc-900 border border-white/10 p-4 mb-4">
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        {[1, 2, 3].map((n) => {
+          const winner = setHistory[n - 1];
+          const isCurrent = vb.set === n && winner == null;
+          return (
+            <div
+              key={n}
+              className={`rounded-xl py-3 text-center border ${isCurrent ? 'border-emerald-400 bg-emerald-400/10' : 'border-white/10 bg-white/5'}`}
+            >
+              <div className="text-[9px] font-bold text-white/40 tracking-widest mb-1">SET {n}</div>
+              {winner ? (
+                <div className="text-xs font-extrabold truncate px-1">{winner}</div>
+              ) : isCurrent ? (
+                <div className="text-xs font-extrabold text-emerald-400">LIVE</div>
+              ) : (
+                <div className="text-xs text-white/20">—</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-bold text-white/50">
+          {matchOver
+            ? `${setsWonA > setsWonB ? teamADisplay : teamBDisplay} wins the match ${Math.max(setsWonA, setsWonB)}-${Math.min(setsWonA, setsWonB)}`
+            : `Sets · ${teamADisplay} ${setsWonA} – ${setsWonB} ${teamBDisplay}`}
+        </div>
+        {!matchOver && (
+          <button
+            onClick={onAdvanceSet}
+            className="btn-press shrink-0 rounded-xl bg-white/10 px-3 py-2 text-xs font-bold text-white flex items-center gap-1"
+          >
+            {vb.set < 3 ? 'Next Set' : 'End Set 3'} <Icon name="ChevronRight" size={14} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 function Volleyball({ globalTimer, onBack }) {
@@ -1436,16 +1497,30 @@ function Volleyball({ globalTimer, onBack }) {
   const [endGameOpen, setEndGameOpen] = useState(false);
 
   const point = () => {
-    setVb((s) => ({
-      ...s,
-      scoreA: s.serving === 'A' ? s.scoreA + 1 : s.scoreA,
-      scoreB: s.serving === 'B' ? s.scoreB + 1 : s.scoreB,
-      streak: s.streak + 1,
-    }));
+    setVb((s) => {
+      const { aEligible, bEligible } = pointServeEligibility(s);
+      return {
+        ...s,
+        scoreA: s.serving === 'A' ? s.scoreA + 1 : s.scoreA,
+        scoreB: s.serving === 'B' ? s.scoreB + 1 : s.scoreB,
+        streak: s.streak + 1,
+        usedPointServeA: s.usedPointServeA || aEligible,
+        usedPointServeB: s.usedPointServeB || bEligible,
+      };
+    });
   };
 
   const sideOut = () => {
-    setVb((s) => ({ ...s, serving: s.serving === 'A' ? 'B' : 'A', streak: 0 }));
+    setVb((s) => {
+      const { aEligible, bEligible } = pointServeEligibility(s);
+      return {
+        ...s,
+        serving: s.serving === 'A' ? 'B' : 'A',
+        streak: 0,
+        usedPointServeA: s.usedPointServeA || aEligible,
+        usedPointServeB: s.usedPointServeB || bEligible,
+      };
+    });
     vibrate(40);
   };
 
@@ -1453,9 +1528,24 @@ function Volleyball({ globalTimer, onBack }) {
     setVb((s) => ({ ...s, [team === 'A' ? 'scoreA' : 'scoreB']: Math.max(0, (team === 'A' ? s.scoreA : s.scoreB) - 1) }));
   };
 
-  const newSet = () => setVb((s) => {
-    const winner = s.scoreA > s.scoreB ? 'A' : s.scoreB > s.scoreA ? 'B' : null;
-    return { ...s, scoreA: 0, scoreB: 0, streak: 0, set: s.set + 1, setHistory: [...(s.setHistory || []), winner] };
+  const advanceSet = () => setVb((s) => {
+    // Store the winning team's *name*, not the A/B slot — the slot swaps below,
+    // so a letter recorded here would silently point at the wrong team afterward.
+    const winner = s.scoreA > s.scoreB
+      ? displayTeamName(s.teamA, 'A')
+      : s.scoreB > s.scoreA ? displayTeamName(s.teamB, 'B') : null;
+    const setHistory = [...(s.setHistory || [])];
+    setHistory[s.set - 1] = winner;
+    return {
+      ...s,
+      teamA: s.teamB, teamB: s.teamA,
+      colorA: s.colorB, colorB: s.colorA,
+      serving: s.serving === 'A' ? 'B' : 'A',
+      scoreA: 0, scoreB: 0, streak: 0,
+      usedPointServeA: false, usedPointServeB: false,
+      set: Math.min(3, s.set + 1),
+      setHistory,
+    };
   });
 
   const switchSides = () => setVb((s) => ({
@@ -1476,12 +1566,11 @@ function Volleyball({ globalTimer, onBack }) {
     }
   };
 
-  const spTarget = vb.set >= 3 ? (vb.decidingTarget || 11) : (vb.regularTarget || 16);
-  const serverScore = vb.serving === 'A' ? vb.scoreA : vb.scoreB;
-  const receiverScore = vb.serving === 'A' ? vb.scoreB : vb.scoreA;
-  const serverName = displayTeamName(vb.serving === 'A' ? vb.teamA : vb.teamB, vb.serving);
-  const pointServeActive = serverScore >= spTarget - 1 && (serverScore - receiverScore) >= 1;
+  const spTarget = volleyballTarget(vb);
+  const { aEligible, bEligible } = pointServeEligibility(vb);
+  const pointServeActive = aEligible || bEligible;
   const winByTwo = Math.min(vb.scoreA, vb.scoreB) >= spTarget - 1;
+  const serverName = displayTeamName(vb.serving === 'A' ? vb.teamA : vb.teamB, vb.serving);
   const bannerText = pointServeActive ? `${serverName} ${winByTwo ? 'WINS BY 2' : 'POINT SERVE'}` : null;
   const setPointRef = useRef(false);
   useEffect(() => {
@@ -1489,22 +1578,18 @@ function Volleyball({ globalTimer, onBack }) {
     setPointRef.current = pointServeActive;
   }, [pointServeActive]);
 
-  const setsWonA = (vb.setHistory || []).filter((w) => w === 'A').length;
-  const setsWonB = (vb.setHistory || []).filter((w) => w === 'B').length;
+  const teamADisplay = displayTeamName(vb.teamA, 'A');
+  const teamBDisplay = displayTeamName(vb.teamB, 'B');
 
   return (
     <div className="px-5 pt-6 pb-8 max-w-md mx-auto flex flex-col min-h-[100dvh]">
       <EndGamePill onClick={() => setEndGameOpen(true)} />
       <Header title="Volleyball" onBack={onBack} onSettings={() => setSettingsOpen(true)} />
-      <TimerBar globalTimer={globalTimer} />
 
-      <div className="flex items-center justify-between mb-2 px-1">
-        <div className="text-white/40 text-xs font-extrabold tracking-widest">SET {vb.set}</div>
+      <VolleyballSetTracker vb={vb} teamADisplay={teamADisplay} teamBDisplay={teamBDisplay} onAdvanceSet={advanceSet} />
+
+      <div className="flex items-center justify-end mb-2 px-1">
         <div className="text-white/40 text-xs font-extrabold tracking-widest">STREAK {vb.streak}</div>
-      </div>
-
-      <div className="text-center text-white/50 text-xs font-bold mb-3">
-        SETS &middot; {displayTeamName(vb.teamA, 'A')} {setsWonA} &ndash; {setsWonB} {displayTeamName(vb.teamB, 'B')}
       </div>
 
       {bannerText && (
@@ -1606,13 +1691,10 @@ function Volleyball({ globalTimer, onBack }) {
           </Field>
         </div>
         <p className="text-white/30 text-xs mt-2 mb-3 leading-relaxed">
-          We'll flag "Point Serve" when the serving team can win the set on this serve — and "Wins By 2" once both teams are close enough that the win-by-two rule is in play.
+          We'll flag "Point Serve" when the serving team can win the set on this serve (once per team per set) — and "Wins By 2" once both teams are close enough that the win-by-two rule is in play. Use "Next Set" at the top of the screen to end a set — sides switch automatically.
         </p>
         <BigButton onClick={switchSides} className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white mb-3 flex items-center justify-center gap-2">
           <Icon name="ArrowLeftRight" size={18} /> Switch Sides
-        </BigButton>
-        <BigButton onClick={newSet} className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white mb-3 flex items-center justify-center gap-2">
-          <Icon name="RotateCcw" size={18} /> Start New Set
         </BigButton>
         <BigButton
           onClick={() => setVb(defaultVolleyball())}
