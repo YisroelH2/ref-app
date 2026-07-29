@@ -110,7 +110,7 @@
 
 const { useState, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 
 /* ============================== ICONS ============================== */
 
@@ -192,6 +192,32 @@ function resolveClosestHour24(hour12, minute) {
   const amTs = nextOccurrence(h, minute);
   const pmTs = nextOccurrence(h + 12, minute);
   return amTs <= pmTs ? h : h + 12;
+}
+
+/* ============================== CAMP SCHEDULE ============================== */
+
+const CAMP_SCHEDULE = [
+  { key: '1st', pill: '1st Activity', label: 'First Activity', startHour: 15, startMinute: 0, endHour: 16, endMinute: 0 },
+  { key: '2nd', pill: '2nd Activity', label: 'Second Activity', startHour: 16, startMinute: 10, endHour: 17, endMinute: 10 },
+  { key: '3rd', pill: '3rd Activity', label: 'Third Activity', startHour: 17, startMinute: 20, endHour: 18, endMinute: 20 },
+  { key: '4th', pill: '4th Activity', label: 'Fourth Activity', startHour: 19, startMinute: 30, endHour: 20, endMinute: 20 },
+];
+
+function todayAt(hh, mm) {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hh, mm, 0, 0).getTime();
+}
+
+function detectCurrentActivity(now) {
+  const nowMs = (now || new Date()).getTime();
+  for (const slot of CAMP_SCHEDULE) {
+    if (nowMs < todayAt(slot.endHour, slot.endMinute)) return slot;
+  }
+  return null;
+}
+
+function formatHM(hh, mm) {
+  return new Date(2000, 0, 1, hh, mm).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 function vibrate(pattern) {
@@ -528,6 +554,8 @@ function defaultTimer() {
     finished: false,
     halftimeMins: 5,
     bufferMins: 2,
+    activityLabel: '',
+    targetEndTs: 0,
   };
 }
 
@@ -580,8 +608,7 @@ function useGlobalTimer() {
     }
   }, [remainingMs, timer.configured, timer.isRunning, timer.finished]);
 
-  const setupAuto = useCallback((hh, mm, halftimeMins, bufferMins) => {
-    const endTs = nextOccurrence(hh, mm);
+  const applyAutoSetup = useCallback((endTs, halftimeMins, bufferMins, activityLabel) => {
     const now = Date.now();
     const totalMs = Math.max(60000, endTs - now);
     const ht = Math.max(0, halftimeMins || 0);
@@ -603,8 +630,39 @@ function useGlobalTimer() {
       finished: false,
       halftimeMins: ht,
       bufferMins: buf,
+      activityLabel: activityLabel || '',
+      targetEndTs: endTs,
     });
   }, [setTimer]);
+
+  const setupAuto = useCallback((hh, mm, halftimeMins, bufferMins, activityLabel) => {
+    applyAutoSetup(nextOccurrence(hh, mm), halftimeMins, bufferMins, activityLabel);
+  }, [applyAutoSetup]);
+
+  const setupAutoAt = useCallback((endTs, halftimeMins, bufferMins, activityLabel) => {
+    applyAutoSetup(endTs, halftimeMins, bufferMins, activityLabel);
+  }, [applyAutoSetup]);
+
+  const setActivityLabel = useCallback((label) => {
+    setTimer((t) => ({ ...t, activityLabel: label }));
+  }, [setTimer]);
+
+  const adjustToSchedule = useCallback(() => {
+    setTimer((t) => {
+      if (!t.targetEndTs) return t;
+      if (t.isRunning) return { ...t, periodEndTs: t.targetEndTs };
+      return { ...t, pausedRemainingMs: Math.max(0, t.targetEndTs - Date.now()) };
+    });
+  }, [setTimer]);
+
+  useEffect(() => {
+    if (!timer.configured && !timer.activityLabel) {
+      const slot = detectCurrentActivity();
+      if (slot) {
+        setTimer((t) => (t.configured || t.activityLabel ? t : { ...t, activityLabel: slot.label }));
+      }
+    }
+  }, [timer.configured]);
 
   const setupManual = useCallback((minutes) => {
     const now = Date.now();
@@ -635,11 +693,13 @@ function useGlobalTimer() {
 
   const reset = useCallback(() => setTimer(defaultTimer()), [setTimer]);
 
-  return { timer, remainingMs, setupAuto, setupManual, toggle, reset };
+  return { timer, remainingMs, setupAuto, setupAutoAt, setupManual, setActivityLabel, adjustToSchedule, toggle, reset };
 }
 
-function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupManual, initialMode, initialHalftimeMins, initialBufferMins, isConfigured, onReset }) {
+function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupManual, initialMode, initialHalftimeMins, initialBufferMins, initialActivityLabel, isConfigured, onReset }) {
   const [mode, setMode] = useState(initialMode || 'auto');
+  const [preset, setPreset] = useState('custom');
+  const [activityLabel, setActivityLabelState] = useState('');
   const [hour, setHour] = useState('');
   const [minute, setMinute] = useState('');
   const [minutes, setMinutes] = useState('15');
@@ -651,18 +711,35 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupManual, initialMod
       setMode(initialMode || 'auto');
       setHalftimeMins(String(initialHalftimeMins ?? 5));
       setBufferMins(String(initialBufferMins ?? 2));
+      setHour('');
+      setMinute('');
+
+      const matchedSlot = CAMP_SCHEDULE.find((s) => s.label === initialActivityLabel);
+      const detected = detectCurrentActivity();
+      if (matchedSlot) {
+        setPreset(matchedSlot.key);
+      } else {
+        setPreset(detected ? detected.key : 'custom');
+      }
+      setActivityLabelState(initialActivityLabel || (detected ? detected.label : ''));
     }
-  }, [open, initialMode, initialHalftimeMins, initialBufferMins]);
+  }, [open, initialMode, initialHalftimeMins, initialBufferMins, initialActivityLabel]);
+
+  const selectedSlot = CAMP_SCHEDULE.find((s) => s.key === preset);
 
   const start = () => {
     if (mode === 'auto') {
-      const h12 = parseInt(hour, 10);
-      const m = parseInt(minute, 10);
-      if (!h12 || h12 < 1 || h12 > 12 || isNaN(m) || m < 0 || m > 59) return;
-      const hh = resolveClosestHour24(h12, m);
       const ht = Math.max(0, parseInt(halftimeMins, 10) || 0);
       const buf = Math.max(0, parseInt(bufferMins, 10) || 0);
-      onSetupAuto(hh, m, ht, buf);
+      if (selectedSlot) {
+        onSetupAutoAt(todayAt(selectedSlot.endHour, selectedSlot.endMinute), ht, buf, selectedSlot.label);
+      } else {
+        const h12 = parseInt(hour, 10);
+        const m = parseInt(minute, 10);
+        if (!h12 || h12 < 1 || h12 > 12 || isNaN(m) || m < 0 || m > 59) return;
+        const hh = resolveClosestHour24(h12, m);
+        onSetupAuto(hh, m, ht, buf, activityLabel);
+      }
     } else {
       const m = parseInt(minutes, 10);
       if (!m || m <= 0) return;
@@ -692,41 +769,70 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupManual, initialMod
       {mode === 'auto' ? (
         <>
           <p className="text-white/50 text-sm mb-5 leading-relaxed">
-            Enter the exact time this activity must end. We'll split the remaining time evenly into two halves and start the countdown.
+            Pick today's activity slot, or go custom for a one-off time. We'll split the remaining time evenly into two halves and start the countdown.
           </p>
-          <Field label="Activity ends at">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <div className="text-[10px] font-bold text-white/30 tracking-widest mb-1 text-center">HOUR</div>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min="1"
-                  max="12"
-                  value={hour}
-                  onChange={(e) => setHour(e.target.value)}
-                  placeholder="7"
-                  className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-4 text-3xl font-extrabold text-white text-center outline-none focus:border-emerald-400/60 tabular"
-                />
-              </div>
-              <div>
-                <div className="text-[10px] font-bold text-white/30 tracking-widest mb-1 text-center">MINUTE</div>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min="0"
-                  max="59"
-                  value={minute}
-                  onChange={(e) => setMinute(e.target.value)}
-                  placeholder="00"
-                  className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-4 text-3xl font-extrabold text-white text-center outline-none focus:border-emerald-400/60 tabular"
-                />
-              </div>
+          <Field label="Activity">
+            <div className="grid grid-cols-3 gap-2">
+              {CAMP_SCHEDULE.map((slot) => (
+                <button
+                  key={slot.key}
+                  type="button"
+                  onClick={() => setPreset(slot.key)}
+                  className={`btn-press rounded-xl py-4 text-sm font-bold ${preset === slot.key ? 'bg-white text-black' : 'bg-white/10 text-white/70'}`}
+                >
+                  {slot.pill}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setPreset('custom')}
+                className={`btn-press rounded-xl py-4 text-sm font-bold ${preset === 'custom' ? 'bg-white text-black' : 'bg-white/10 text-white/70'}`}
+              >
+                Custom
+              </button>
             </div>
-            <p className="text-white/30 text-xs mt-2 leading-relaxed">
-              No need for AM/PM — we'll pick whichever is sooner.
-            </p>
           </Field>
+
+          {selectedSlot ? (
+            <div className="rounded-2xl bg-white/5 border border-white/10 py-4 mb-5 text-center">
+              <div className="text-[10px] font-bold text-white/30 tracking-widest mb-1">ENDS AT</div>
+              <div className="text-3xl font-extrabold tabular">{formatHM(selectedSlot.endHour, selectedSlot.endMinute)}</div>
+            </div>
+          ) : (
+            <Field label="Activity ends at">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="text-[10px] font-bold text-white/30 tracking-widest mb-1 text-center">HOUR</div>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="1"
+                    max="12"
+                    value={hour}
+                    onChange={(e) => setHour(e.target.value)}
+                    placeholder="7"
+                    className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-4 text-3xl font-extrabold text-white text-center outline-none focus:border-emerald-400/60 tabular"
+                  />
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-white/30 tracking-widest mb-1 text-center">MINUTE</div>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    max="59"
+                    value={minute}
+                    onChange={(e) => setMinute(e.target.value)}
+                    placeholder="00"
+                    className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-4 text-3xl font-extrabold text-white text-center outline-none focus:border-emerald-400/60 tabular"
+                  />
+                </div>
+              </div>
+              <p className="text-white/30 text-xs mt-2 leading-relaxed">
+                No need for AM/PM — we'll pick whichever is sooner.
+              </p>
+            </Field>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Halftime (mins)">
               <input
@@ -796,6 +902,30 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupManual, initialMod
 function TimerBar({ globalTimer }) {
   const { timer, remainingMs, toggle, reset } = globalTimer;
   const [setupOpen, setSetupOpen] = useState(false);
+  const [driftDismissed, setDriftDismissed] = useState(false);
+  const driftShownRef = useRef(false);
+
+  useEffect(() => {
+    setDriftDismissed(false);
+  }, [timer.currentHalf, timer.configured]);
+
+  const showDrift =
+    timer.configured &&
+    !timer.finished &&
+    timer.mode === 'auto' &&
+    timer.currentHalf >= timer.totalHalves &&
+    !!timer.targetEndTs &&
+    !driftDismissed &&
+    Math.abs(timer.periodEndTs - timer.targetEndTs) > 2 * 60000;
+
+  useEffect(() => {
+    if (showDrift && !driftShownRef.current) {
+      vibrate([60, 40, 60, 40, 60]);
+      driftShownRef.current = true;
+    } else if (!showDrift) {
+      driftShownRef.current = false;
+    }
+  }, [showDrift]);
 
   if (!timer.configured) {
     return (
@@ -811,10 +941,12 @@ function TimerBar({ globalTimer }) {
           open={setupOpen}
           onClose={() => setSetupOpen(false)}
           onSetupAuto={globalTimer.setupAuto}
+          onSetupAutoAt={globalTimer.setupAutoAt}
           onSetupManual={globalTimer.setupManual}
           initialMode={timer.mode}
           initialHalftimeMins={timer.halftimeMins}
           initialBufferMins={timer.bufferMins}
+          initialActivityLabel={timer.activityLabel}
           isConfigured={timer.configured}
           onReset={reset}
         />
@@ -855,6 +987,31 @@ function TimerBar({ globalTimer }) {
         </div>
         <Icon name={isRunning ? 'Pause' : 'Play'} size={30} className={isRunning ? 'text-emerald-400' : 'text-red-400'} />
       </button>
+
+      {showDrift && (
+        <div className="mt-2 rounded-2xl bg-amber-400/15 border border-amber-400/40 px-4 py-3">
+          <div className="text-amber-300 text-xs font-bold leading-snug mb-2">
+            {timer.periodEndTs > timer.targetEndTs ? 'Running behind schedule' : 'Running ahead of schedule'} — at this pace you'll finish around{' '}
+            {new Date(timer.periodEndTs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} instead of{' '}
+            {new Date(timer.targetEndTs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.
+          </div>
+          <div className="flex gap-2">
+            <BigButton
+              onClick={() => { globalTimer.adjustToSchedule(); setDriftDismissed(true); }}
+              className="flex-1 rounded-xl bg-amber-400 text-black py-2.5 text-xs font-extrabold"
+            >
+              Adjust to {new Date(timer.targetEndTs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+            </BigButton>
+            <BigButton
+              onClick={() => setDriftDismissed(true)}
+              className="flex-1 rounded-xl bg-white/10 py-2.5 text-xs font-bold text-white/60"
+            >
+              Keep As Is
+            </BigButton>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-end mt-1.5">
         <button onClick={() => setSetupOpen(true)} className="text-white/30 text-xs font-semibold flex items-center gap-1 py-1 px-2">
           <Icon name="Settings" size={12} /> {timer.endLabel}
@@ -864,10 +1021,12 @@ function TimerBar({ globalTimer }) {
         open={setupOpen}
         onClose={() => setSetupOpen(false)}
         onSetupAuto={globalTimer.setupAuto}
+        onSetupAutoAt={globalTimer.setupAutoAt}
         onSetupManual={globalTimer.setupManual}
         initialMode={timer.mode}
         initialHalftimeMins={timer.halftimeMins}
         initialBufferMins={timer.bufferMins}
+        initialActivityLabel={timer.activityLabel}
         isConfigured={timer.configured}
         onReset={reset}
       />
@@ -927,16 +1086,26 @@ function ScoreHalf({ name, score, onScore, onUndo, footer, scoreClassName = 'tex
 
 /* ============================== SHARED END GAME ============================== */
 
-const ACTIVITY_PERIODS = ['First Activity', 'Second Activity', 'Third Activity', 'Fourth Activity'];
+const ACTIVITY_PERIODS = CAMP_SCHEDULE.map((s) => s.label);
 
-function EndGameSheet({ open, onClose, sportLabel, teamA, teamB, scoreA, scoreB }) {
-  const [activityPeriod, setActivityPeriod] = useLocalStorage('refcourt_activity_period_v1', 'First Activity');
+function EndGameSheet({ open, onClose, sportLabel, teamA, teamB, scoreA, scoreB, globalTimer }) {
+  const [activityPeriod, setActivityPeriodState] = useState(ACTIVITY_PERIODS[0]);
   const [appSettings] = useLocalStorage(APP_SETTINGS_KEY, defaultAppSettings());
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (!open) setCopied(false);
+    if (open) {
+      setCopied(false);
+      const syncedLabel = globalTimer && globalTimer.timer.activityLabel;
+      const detected = detectCurrentActivity();
+      setActivityPeriodState(syncedLabel || (detected ? detected.label : ACTIVITY_PERIODS[0]));
+    }
   }, [open]);
+
+  const setActivityPeriod = (label) => {
+    setActivityPeriodState(label);
+    if (globalTimer) globalTimer.setActivityLabel(label);
+  };
 
   const winnerName = scoreA > scoreB ? teamA : scoreB > scoreA ? teamB : null;
   const message = winnerName
@@ -1383,6 +1552,7 @@ function Volleyball({ globalTimer, onBack }) {
         teamB={vb.teamB}
         scoreA={vb.scoreA}
         scoreB={vb.scoreB}
+        globalTimer={globalTimer}
       />
     </div>
   );
@@ -1557,6 +1727,7 @@ function Football({ globalTimer, onBack }) {
         teamB={fb.teamB}
         scoreA={fb.scoreA}
         scoreB={fb.scoreB}
+        globalTimer={globalTimer}
       />
     </div>
   );
@@ -1794,6 +1965,7 @@ function Universal({ sport, globalTimer, onBack }) {
         teamB={g.teamB}
         scoreA={g.scoreA}
         scoreB={g.scoreB}
+        globalTimer={globalTimer}
       />
     </div>
   );
@@ -1945,6 +2117,7 @@ function Basketball({ globalTimer, onBack }) {
         teamB={bk.teamB}
         scoreA={bk.scoreA}
         scoreB={bk.scoreB}
+        globalTimer={globalTimer}
       />
     </div>
   );
