@@ -1,4 +1,4 @@
-// RefCourt service worker — offline-first app shell + CDN runtime caching.
+// YKP-refs service worker — offline-first app shell + CDN runtime caching.
 //
 // This app loads React, Babel standalone, Tailwind, and Lucide from CDNs
 // with no build step. Classic <script src="https://...">/<link rel="stylesheet">

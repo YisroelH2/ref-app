@@ -1,4 +1,4 @@
-# RefCourt — Camp Sports Referee Toolkit
+# YKP-refs — Camp Sports Referee Toolkit
 
 A single-file, mobile-first web app for camp sports referees. No build step — just static HTML.
 

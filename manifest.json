@@ -1,6 +1,6 @@
 {
-  "name": "RefCourt — Camp Sports Referee Toolkit",
-  "short_name": "RefCourt",
+  "name": "YKP-refs — Camp Sports Referee Toolkit",
+  "short_name": "YKP-refs",
   "description": "Fat-finger-proof scoreboards, timers, and trackers for camp sports referees.",
   "start_url": "./index.html",
   "scope": "./",
