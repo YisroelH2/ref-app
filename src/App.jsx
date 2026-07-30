@@ -3,7 +3,7 @@ import Icon from './components/Icon.jsx';
 import IconButton from './components/IconButton.jsx';
 import Sheet from './components/Sheet.jsx';
 
-const APP_VERSION = '3.1.3';
+const APP_VERSION = '3.1.4';
 
 
 
@@ -78,6 +78,21 @@ function detectCurrentActivity(now) {
     if (nowMs < wrapUpEnd) return slot;
   }
   return CAMP_SCHEDULE[CAMP_SCHEDULE.length - 1] || null;
+}
+
+// Unlike detectCurrentActivity(), this has no wrap-up grace period — it's for
+// picking which activity a *new* game clock should default to, where we want
+// to move on to the next slot the instant one ends rather than lingering on
+// the one that just finished (that lingering is deliberate over in
+// detectCurrentActivity, for the End Game message, but wrong here — it was
+// making a freshly opened "Set Game Clock" suggest the activity that had
+// already ended instead of the one about to start).
+function detectUpcomingActivity(now) {
+  const nowMs = (now || new Date()).getTime();
+  for (const slot of CAMP_SCHEDULE) {
+    if (nowMs < todayAt(slot.endHour, slot.endMinute)) return slot;
+  }
+  return null;
 }
 
 function formatHM(hh, mm) {
@@ -666,16 +681,26 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupMan
       setHour('');
       setMinute('');
 
-      const matchedSlot = CAMP_SCHEDULE.find((s) => s.label === initialActivityLabel);
-      const detected = detectCurrentActivity();
-      if (matchedSlot) {
-        setPreset(matchedSlot.key);
+      if (isConfigured) {
+        // Re-opening the sheet for a timer that's already running (e.g. via
+        // long-press to adjust settings) — show what it's actually set to,
+        // not whatever's currently upcoming on the wall clock.
+        const matchedSlot = CAMP_SCHEDULE.find((s) => s.label === initialActivityLabel);
+        setPreset(matchedSlot ? matchedSlot.key : 'custom');
+        setActivityLabelState(initialActivityLabel || '');
       } else {
-        setPreset(detected ? detected.key : 'custom');
+        // Fresh setup — suggest whichever activity is actually current/next
+        // on the schedule right now. Deliberately ignores initialActivityLabel
+        // here: it can still be lingering on the activity that JUST finished
+        // (the End Game message flow keeps it around briefly on purpose), and
+        // a freshly opened "Set Game Clock" should point at what's coming up,
+        // not what already ended.
+        const upcoming = detectUpcomingActivity();
+        setPreset(upcoming ? upcoming.key : 'custom');
+        setActivityLabelState(upcoming ? upcoming.label : '');
       }
-      setActivityLabelState(initialActivityLabel || (detected ? detected.label : ''));
     }
-  }, [open, initialMode, initialHalftimeMins, initialBufferMins, initialActivityLabel, initialSkipHalftime]);
+  }, [open, initialMode, initialHalftimeMins, initialBufferMins, initialActivityLabel, initialSkipHalftime, isConfigured]);
 
   const selectedSlot = CAMP_SCHEDULE.find((s) => s.key === preset);
 
