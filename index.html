@@ -69,8 +69,6 @@
     height: 100%;
     height: 100dvh;
     overflow: hidden;
-    position: fixed;
-    inset: 0;
     width: 100%;
   }
   body {
@@ -400,10 +398,12 @@ function Sheet({ open, onClose, title, children }) {
           transform: dragY ? `translateY(${dragY}px)` : undefined,
           transition: dragging ? 'none' : 'transform 0.2s ease',
         }}
-        onTouchStart={onDragStart}
-        onMouseDown={onDragStart}
       >
-        <div className="flex justify-center items-center -mx-6 -mt-5 landscape:-mt-3 mb-4 landscape:mb-2 py-3 landscape:py-1.5">
+        <div
+          className="flex justify-center items-center -mx-6 -mt-5 landscape:-mt-3 mb-4 landscape:mb-2 py-3 landscape:py-1.5"
+          onTouchStart={onDragStart}
+          onMouseDown={onDragStart}
+        >
           <div className="h-1.5 w-12 rounded-full bg-white/20" />
         </div>
         <div className="flex items-center justify-between mb-5 landscape:mb-3">
