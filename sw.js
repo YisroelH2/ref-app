@@ -12,8 +12,28 @@
 //   - In the fetch handler we must treat `response.type === 'opaque'` as a
 //     cacheable success, since opaque responses always report `ok: false`.
 
-const CACHE_VERSION = 'v1.11.0';
+const CACHE_VERSION = 'v1.11.1';
 const CACHE_NAME = `refcourt-${CACHE_VERSION}`;
+
+// Safari/WebKit refuses to let a service worker fulfill a *navigation*
+// request with a response whose internal URL list has more than one entry
+// (i.e. Response.redirected === true) — per the HTML/Fetch spec, that's a
+// hard network error ("Response served by service worker has redirections").
+// If the origin ever 30x-redirects a same-origin request we precache or
+// proxy (e.g. bare '/' -> '/index.html', or a trailing-slash normalization),
+// `fetch()` follows it transparently and hands back a redirected Response.
+// Caching or returning that as-is poisons the cache/serves a page that
+// throws in Safari. Rebuilding a plain Response from its body/status/headers
+// drops the redirect history so it's safe to cache and respond with.
+async function stripRedirect(response) {
+  if (!response || !response.redirected) return response;
+  const body = await response.clone().blob();
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
 
 // Same-origin app shell.
 const LOCAL_ASSETS = [
@@ -39,8 +59,15 @@ self.addEventListener('install', (event) => {
     (async () => {
       const cache = await caches.open(CACHE_NAME);
 
-      // Same-origin assets — normal same-origin fetches.
-      await cache.addAll(LOCAL_ASSETS);
+      // Same-origin assets — fetched individually (rather than cache.addAll)
+      // so a redirected response (e.g. './' -> './index.html') can be
+      // unwrapped with stripRedirect() before it lands in the cache.
+      await Promise.all(
+        LOCAL_ASSETS.map(async (url) => {
+          const response = await fetch(url);
+          await cache.put(url, await stripRedirect(response));
+        })
+      );
 
       // Cross-origin CDN assets — fetched individually as opaque responses
       // so a missing CORS header on any one host can't fail the whole install.
@@ -89,7 +116,7 @@ self.addEventListener('fetch', (event) => {
         // Cross-origin CDN requests already arrive here in 'no-cors' mode
         // (that's how the browser loads classic cross-origin <script>/<link>
         // tags), so fetching the request as-is preserves that automatically.
-        const response = await fetch(request);
+        const response = await stripRedirect(await fetch(request));
 
         // Cache same-origin 200s ('basic'/'cors') and cross-origin opaque
         // responses (always status 0 / ok:false, but still valid to store).
