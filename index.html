@@ -111,7 +111,7 @@
 
 const { useState, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = '1.9.0';
+const APP_VERSION = '1.10.0';
 
 /* ============================== ICONS ============================== */
 
@@ -237,6 +237,8 @@ function defaultAppSettings() {
     volleyballDecidingTarget: 11,
     whatsappPhone: '',
     volleyballTapToScore: false,
+    basketballFoulsEnabled: false,
+    selectedCamp: '',
   };
 }
 
@@ -410,18 +412,29 @@ function ColorPicker({ value, onChange }) {
 
 /* ============================== CAMP TEAM ROSTER ============================== */
 
-const CAMP_TEAMS = [
-  { city: 'Klimavitch', counselor: 'Edelkopf', color: 'black' },
-  { city: 'Nevel', counselor: 'Wonder', color: 'red' },
-  { city: 'Kremenchuk', counselor: 'Fischer', color: 'blue' },
-  { city: 'Dnipropetrovsk', counselor: 'Margo', color: 'darkgreen' },
-  { city: 'Yekatrinaslav', counselor: 'Wineburg', color: 'yellow' },
-  { city: 'Rostov', counselor: 'Naparstak', color: 'brown' },
-  { city: 'Otvotsk', counselor: 'Raskin', color: 'orange' },
-  { city: 'Nezhin', counselor: 'Sason', color: 'purple' },
-  { city: 'Nikolayev', counselor: 'Baumgarten', color: 'grey' },
-  { city: 'Poltava', counselor: 'Drizin', color: 'navy' },
-].map((t) => ({ ...t, label: `${t.city} - ${t.counselor}` }));
+const CAMP_ROSTERS = {
+  ykp8: {
+    label: 'YKP 8th Grade',
+    teams: [
+      { city: 'Klimavitch', counselor: 'Edelkopf', color: 'black' },
+      { city: 'Nevel', counselor: 'Wonder', color: 'red' },
+      { city: 'Kremenchuk', counselor: 'Fischer', color: 'blue' },
+      { city: 'Dnipropetrovsk', counselor: 'Margo', color: 'darkgreen' },
+      { city: 'Yekatrinaslav', counselor: 'Wineburg', color: 'yellow' },
+      { city: 'Rostov', counselor: 'Naparstak', color: 'brown' },
+      { city: 'Otvotsk', counselor: 'Raskin', color: 'orange' },
+      { city: 'Nezhin', counselor: 'Sason', color: 'purple' },
+      { city: 'Nikolayev', counselor: 'Baumgarten', color: 'grey' },
+      { city: 'Poltava', counselor: 'Drizin', color: 'navy' },
+    ],
+  },
+};
+
+function getCampTeams() {
+  const roster = CAMP_ROSTERS[getAppSettings().selectedCamp];
+  if (!roster) return [];
+  return roster.teams.map((t) => ({ ...t, label: `${t.city} - ${t.counselor}` }));
+}
 
 function levenshtein(a, b) {
   const m = a.length, n = b.length;
@@ -456,10 +469,11 @@ function fuzzyDistance(query, text) {
 }
 
 function searchCampTeams(query) {
+  const campTeams = getCampTeams();
   const q = query.trim();
-  if (!q) return CAMP_TEAMS;
+  if (!q) return campTeams;
   const threshold = Math.max(2, Math.ceil(q.length * 0.5));
-  return CAMP_TEAMS
+  return campTeams
     .map((t) => {
       const colorLabel = (TEAM_COLOR_PRESETS.find((c) => c.id === t.color) || {}).label || t.color;
       return {
@@ -489,7 +503,7 @@ function TeamPicker({ label, teamName, teamColor, onSelect, onCustomName, onCust
   const commit = () => {
     const trimmed = query.trim();
     if (!trimmed) return;
-    const exact = CAMP_TEAMS.find((t) => t.label.toLowerCase() === trimmed.toLowerCase());
+    const exact = getCampTeams().find((t) => t.label.toLowerCase() === trimmed.toLowerCase());
     if (exact) {
       onSelect(exact);
       setQuery(exact.label);
@@ -604,6 +618,9 @@ function useGlobalTimer() {
           return {
             ...t,
             currentHalf: t.currentHalf + 1,
+            // Always stop at the half boundary — never auto-run into the next half.
+            // The ref has to tap to resume, same as a manual pause.
+            isRunning: false,
             periodEndTs: Date.now() + remaining,
             pausedRemainingMs: remaining,
           };
@@ -671,12 +688,24 @@ function useGlobalTimer() {
     setTimer((t) => ({ ...t, activityLabel: label }));
   }, [setTimer]);
 
-  const adjustToSchedule = useCallback(() => {
+  // Re-splits whatever time is left before the original scheduled end across the
+  // half(s) still to play, so it's correct whether called mid-Half-1 (still needs
+  // to leave room for a whole next half) or in the final half (just snap to the
+  // target). Also re-reserves halftime/buffer minutes that haven't happened yet.
+  const recalculate = useCallback(() => {
     setTimer((t) => {
-      if (!t.targetEndTs) return t;
-      if (t.isRunning) return { ...t, periodEndTs: t.targetEndTs };
-      return { ...t, pausedRemainingMs: Math.max(0, t.targetEndTs - Date.now()) };
+      if (!t.targetEndTs || t.mode !== 'auto') return t;
+      const now = Date.now();
+      const remainingHalves = Math.max(1, t.totalHalves - t.currentHalf + 1);
+      const stillToReserveMins = t.currentHalf === 1 ? (t.halftimeMins || 0) + (t.bufferMins || 0) : (t.bufferMins || 0);
+      const totalRemaining = Math.max(10000, (t.targetEndTs - now) - stillToReserveMins * 60000);
+      const newHalfMs = Math.max(10000, totalRemaining / remainingHalves);
+      if (t.isRunning) {
+        return { ...t, halfMs: newHalfMs, periodEndTs: now + newHalfMs };
+      }
+      return { ...t, halfMs: newHalfMs, pausedRemainingMs: newHalfMs };
     });
+    vibrate(40);
   }, [setTimer]);
 
   useEffect(() => {
@@ -717,7 +746,7 @@ function useGlobalTimer() {
 
   const reset = useCallback(() => setTimer(defaultTimer()), [setTimer]);
 
-  return { timer, remainingMs, setupAuto, setupAutoAt, setupManual, setActivityLabel, adjustToSchedule, toggle, reset };
+  return { timer, remainingMs, setupAuto, setupAutoAt, setupManual, setActivityLabel, recalculate, toggle, reset };
 }
 
 function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupManual, initialMode, initialHalftimeMins, initialBufferMins, initialActivityLabel, isConfigured, onReset }) {
@@ -1053,7 +1082,7 @@ function TimerBar({ globalTimer }) {
           </div>
           <div className="flex gap-2">
             <BigButton
-              onClick={() => { globalTimer.adjustToSchedule(); setDriftDismissed(true); }}
+              onClick={() => { globalTimer.recalculate(); setDriftDismissed(true); }}
               className="flex-1 rounded-xl bg-amber-400 text-black py-2.5 text-xs font-extrabold"
             >
               Adjust to {new Date(timer.targetEndTs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
@@ -1068,10 +1097,18 @@ function TimerBar({ globalTimer }) {
         </div>
       )}
 
-      <div className="flex justify-end mt-1.5">
-        <div className="text-white/30 text-xs font-semibold flex items-center gap-1 py-1 px-2">
+      <div className="flex items-center justify-between mt-1.5 gap-2">
+        <div className="text-white/30 text-xs font-semibold flex items-center gap-1 py-1 px-2 truncate">
           <Icon name="Clock" size={12} /> {timer.endLabel} · hold clock to adjust
         </div>
+        {timer.mode === 'auto' && !!timer.targetEndTs && (
+          <button
+            onClick={() => globalTimer.recalculate()}
+            className="btn-press shrink-0 flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white/60"
+          >
+            <Icon name="RotateCw" size={11} /> Recalculate
+          </button>
+        )}
       </div>
       <TimerSetupSheet
         open={setupOpen}
@@ -1282,6 +1319,31 @@ function VibrationTest() {
 function AppSettingsSheet({ open, onClose, settings, setSettings }) {
   return (
     <Sheet open={open} onClose={onClose} title="App Settings">
+      <Field label="Camp Roster">
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setSettings((s) => ({ ...s, selectedCamp: '' }))}
+            className={`btn-press rounded-xl py-3 px-4 text-sm font-bold ${settings.selectedCamp === '' ? 'bg-white text-black' : 'bg-white/10 text-white/70'}`}
+          >
+            None
+          </button>
+          {Object.entries(CAMP_ROSTERS).map(([key, camp]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setSettings((s) => ({ ...s, selectedCamp: key }))}
+              className={`btn-press rounded-xl py-3 px-4 text-sm font-bold ${settings.selectedCamp === key ? 'bg-white text-black' : 'bg-white/10 text-white/70'}`}
+            >
+              {camp.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-white/30 text-xs mt-2 leading-relaxed">
+          Picking a camp fills team pickers with its roster as suggestions. Leave on "None" to keep the roster empty.
+        </p>
+      </Field>
+
       <Field label="Sports Director WhatsApp Phone #">
         <TextInput
           type="tel"
@@ -1357,6 +1419,21 @@ function AppSettingsSheet({ open, onClose, settings, setSettings }) {
           When on, tapping the team that's already serving adds a point. Tapping the other team still just switches serve (side out) — tap it again once they're serving to score.
         </p>
       </Field>
+
+      <Field label="Basketball · Track Fouls">
+        <Segmented
+          options={[{ value: false, label: 'Off' }, { value: true, label: 'On' }]}
+          value={settings.basketballFoulsEnabled}
+          onChange={(v) => setSettings((s) => ({ ...s, basketballFoulsEnabled: v }))}
+        />
+        <p className="text-white/30 text-xs mt-2 leading-relaxed">
+          When on, each Basketball team gets a small foul counter under their scoring buttons.
+        </p>
+      </Field>
+
+      <BigButton onClick={onClose} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg mt-2">
+        Done
+      </BigButton>
     </Sheet>
   );
 }
@@ -1411,6 +1488,10 @@ function Home({ onSelect, settings, setSettings }) {
         settings={settings}
         setSettings={setSettings}
       />
+
+      <div className="mt-4 text-center text-white/15 text-[10px] font-semibold">
+        &copy; {new Date().getFullYear()} Yisroel Haskelevich
+      </div>
     </div>
   );
 }
@@ -1571,7 +1652,7 @@ function Volleyball({ globalTimer, onBack }) {
   const pointServeActive = aEligible || bEligible;
   const winByTwo = Math.min(vb.scoreA, vb.scoreB) >= spTarget - 1;
   const serverName = displayTeamName(vb.serving === 'A' ? vb.teamA : vb.teamB, vb.serving);
-  const bannerText = pointServeActive ? `${serverName} ${winByTwo ? 'WINS BY 2' : 'POINT SERVE'}` : null;
+  const bannerText = pointServeActive ? `${serverName} POINT SERVE${winByTwo ? ' (WIN BY 2)' : ''}` : null;
   const setPointRef = useRef(false);
   useEffect(() => {
     if (pointServeActive && !setPointRef.current) vibrate(40);
@@ -1691,7 +1772,7 @@ function Volleyball({ globalTimer, onBack }) {
           </Field>
         </div>
         <p className="text-white/30 text-xs mt-2 mb-3 leading-relaxed">
-          We'll flag "Point Serve" when the serving team can win the set on this serve (once per team per set) — and "Wins By 2" once both teams are close enough that the win-by-two rule is in play. Use "Next Set" at the top of the screen to end a set — sides switch automatically.
+          We'll flag "Point Serve" when the serving team can win the set on this serve (once per team per set) — adding "(Win By 2)" once both teams are close enough that the win-by-two rule is in play, so it's clear that's what's needed, not a claim they're already 2 ahead. Use "Next Set" at the top of the screen to end a set — sides switch automatically.
         </p>
         <BigButton onClick={switchSides} className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white mb-3 flex items-center justify-center gap-2">
           <Icon name="ArrowLeftRight" size={18} /> Switch Sides
@@ -1701,6 +1782,9 @@ function Volleyball({ globalTimer, onBack }) {
           className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mb-3"
         >
           Reset Match
+        </BigButton>
+        <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
+          Done
         </BigButton>
       </Sheet>
 
@@ -1876,6 +1960,9 @@ function Football({ globalTimer, onBack }) {
           className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2 mb-3"
         >
           Reset Game
+        </BigButton>
+        <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
+          Done
         </BigButton>
       </Sheet>
 
@@ -2119,6 +2206,9 @@ function Universal({ sport, globalTimer, onBack }) {
         >
           Reset Game
         </BigButton>
+        <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
+          Done
+        </BigButton>
       </Sheet>
 
       <EndGameSheet
@@ -2140,21 +2230,33 @@ function Universal({ sport, globalTimer, onBack }) {
 const BK_KEY = 'refcourt_basketball_v1';
 
 function defaultBasketball() {
-  return { teamA: '', teamB: '', scoreA: 0, scoreB: 0, colorA: null, colorB: null, half: 1, periodMode: 'halves', history: [] };
+  return { teamA: '', teamB: '', scoreA: 0, scoreB: 0, colorA: null, colorB: null, half: 1, periodMode: 'halves', history: [], foulsA: 0, foulsB: 0 };
 }
 
 function Basketball({ globalTimer, onBack }) {
   const [bk, setBk] = useLocalStorage(BK_KEY, defaultBasketball());
+  const [appSettings] = useLocalStorage(APP_SETTINGS_KEY, defaultAppSettings());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [endGameOpen, setEndGameOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  useEffect(() => {
+    if (!historyOpen) return;
+    const t = setTimeout(() => setHistoryOpen(false), 4000);
+    return () => clearTimeout(t);
+  }, [historyOpen]);
 
   const addScore = (team, pts) => {
     setBk((s) => ({
       ...s,
       [team === 'A' ? 'scoreA' : 'scoreB']: (team === 'A' ? s.scoreA : s.scoreB) + pts,
-      history: [...s.history, { team, pts }].slice(-30),
+      history: [...s.history, { team, pts, ts: Date.now() }].slice(-30),
     }));
     vibrate(30);
+  };
+
+  const adjustFouls = (team, delta) => {
+    setBk((s) => ({ ...s, [team === 'A' ? 'foulsA' : 'foulsB']: Math.max(0, (team === 'A' ? s.foulsA : s.foulsB) + delta) }));
   };
 
   const undoLast = () => {
@@ -2192,6 +2294,14 @@ function Basketball({ globalTimer, onBack }) {
         >
           <Icon name="Minus" size={16} />
         </div>
+        <div
+          role="button"
+          onClick={(e) => { e.stopPropagation(); setHistoryOpen(true); }}
+          aria-label="Show scoring history"
+          className={`btn-press absolute top-3 right-3 w-10 h-10 rounded-full ${c.overlay} ${c.text} flex items-center justify-center`}
+        >
+          <Icon name="Clock" size={16} />
+        </div>
         <div className={`text-lg font-bold ${c.text} opacity-70 truncate max-w-full`}>{name}</div>
         <div className={`text-7xl font-black tabular ${c.text}`}>{score}</div>
         <div className="grid grid-cols-3 gap-2 w-full">
@@ -2206,6 +2316,16 @@ function Basketball({ globalTimer, onBack }) {
             +3
           </BigButton>
         </div>
+        {appSettings.basketballFoulsEnabled && (
+          <div className="w-full flex items-center justify-between px-1">
+            <span className={`text-[10px] font-bold ${c.sub} tracking-widest`}>FOULS</span>
+            <div className="flex items-center gap-2">
+              <IconButton name="Minus" size={12} onClick={(e) => { e.stopPropagation(); adjustFouls(team, -1); }} label="Remove foul" />
+              <span className={`text-sm font-extrabold tabular w-4 text-center ${c.text}`}>{team === 'A' ? bk.foulsA : bk.foulsB}</span>
+              <IconButton name="Plus" size={12} onClick={(e) => { e.stopPropagation(); adjustFouls(team, 1); }} label="Add foul" />
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -2217,6 +2337,33 @@ function Basketball({ globalTimer, onBack }) {
   return (
     <div className="px-5 pt-6 pb-8 max-w-md mx-auto flex flex-col min-h-[100dvh]">
       <EndGamePill onClick={() => setEndGameOpen(true)} />
+
+      {historyOpen && (
+        <div className="fixed inset-x-0 top-20 z-50 flex justify-center px-5 pointer-events-none">
+          <div className="pop-in w-full max-w-sm rounded-2xl bg-zinc-900 border border-white/20 shadow-2xl p-3">
+            <div className="text-[10px] font-extrabold tracking-widest text-white/40 mb-2 px-1">RECENT SCORING</div>
+            {bk.history.length === 0 ? (
+              <div className="text-white/30 text-xs px-1 py-2">No scores yet</div>
+            ) : (
+              [...bk.history].slice(-5).reverse().map((h, i) => {
+                const hc = teamColorClasses(h.team === 'A' ? bk.colorA : bk.colorB);
+                const hname = displayTeamName(h.team === 'A' ? bk.teamA : bk.teamB, h.team);
+                return (
+                  <div key={i} className="flex items-center gap-2 py-1.5 border-b border-white/5 last:border-0">
+                    <span className={`w-3 h-3 rounded-full shrink-0 ${hc.bg} border border-white/20`} />
+                    <span className="text-xs font-semibold flex-1 truncate">{hname}</span>
+                    <span className="text-xs font-extrabold">+{h.pts}</span>
+                    <span className="text-[10px] text-white/30 tabular">
+                      {h.ts ? new Date(h.ts).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' }) : '—'}
+                    </span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
       <Header title="Basketball" onBack={onBack} onSettings={() => setSettingsOpen(true)} />
       <TimerBar globalTimer={globalTimer} />
 
@@ -2270,6 +2417,9 @@ function Basketball({ globalTimer, onBack }) {
           className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2 mb-3"
         >
           Reset Game
+        </BigButton>
+        <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
+          Done
         </BigButton>
       </Sheet>
 
