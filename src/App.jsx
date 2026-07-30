@@ -3,7 +3,7 @@ import Icon from './components/Icon.jsx';
 import IconButton from './components/IconButton.jsx';
 import Sheet from './components/Sheet.jsx';
 
-const APP_VERSION = '3.1.1';
+const APP_VERSION = '3.1.2';
 
 
 
@@ -61,12 +61,23 @@ function todayAt(hh, mm) {
   return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hh, mm, 0, 0).getTime();
 }
 
+// How long past an activity's scheduled end time we keep reporting it as the
+// "current" activity, so wrapping up and sending the result doesn't get
+// misattributed to whatever comes next. Capped at each next activity's actual
+// start time, so it never bleeds into a slot that's genuinely underway.
+const ACTIVITY_WRAPUP_GRACE_MINS = 20;
+
 function detectCurrentActivity(now) {
   const nowMs = (now || new Date()).getTime();
-  for (const slot of CAMP_SCHEDULE) {
-    if (nowMs < todayAt(slot.endHour, slot.endMinute)) return slot;
+  for (let i = 0; i < CAMP_SCHEDULE.length; i++) {
+    const slot = CAMP_SCHEDULE[i];
+    const next = CAMP_SCHEDULE[i + 1];
+    const end = todayAt(slot.endHour, slot.endMinute);
+    const nextStart = next ? todayAt(next.startHour, next.startMinute) : Infinity;
+    const wrapUpEnd = Math.min(end + ACTIVITY_WRAPUP_GRACE_MINS * 60000, nextStart);
+    if (nowMs < wrapUpEnd) return slot;
   }
-  return null;
+  return CAMP_SCHEDULE[CAMP_SCHEDULE.length - 1] || null;
 }
 
 function formatHM(hh, mm) {
@@ -537,6 +548,29 @@ function useGlobalTimer() {
     setTimer((t) => ({ ...t, activityLabel: label }));
   }, [setTimer]);
 
+  // Updates halftime/buffer minutes on an already-configured auto timer without
+  // touching currentHalf, periodEndTs, or isRunning — a plain settings edit,
+  // not a restart.
+  const updateAutoSettings = useCallback((halftimeMins, bufferMins) => {
+    setTimer((t) => {
+      if (!t.configured || t.mode !== 'auto') return t;
+      return { ...t, halftimeMins: Math.max(0, halftimeMins || 0), bufferMins: Math.max(0, bufferMins || 0) };
+    });
+  }, [setTimer]);
+
+  // Restarts the countdown for the half currently in progress as a single
+  // combined block: this half's allotted length plus the buffer minutes,
+  // counted straight through with no phase change. Doesn't touch currentHalf/
+  // totalHalves — it's a reset of "the rest of the game," not a new game.
+  const restartHalfWithBuffer = useCallback(() => {
+    setTimer((t) => {
+      if (!t.configured || t.mode !== 'auto') return t;
+      const duration = Math.max(10000, t.halfMs + (t.bufferMins || 0) * 60000);
+      return { ...t, isRunning: true, finished: false, periodEndTs: Date.now() + duration, pausedRemainingMs: duration };
+    });
+    vibrate(40);
+  }, [setTimer]);
+
   // Re-splits whatever time is left before the original scheduled end across the
   // half(s) still to play, so it's correct whether called mid-Half-1 (still needs
   // to leave room for a whole next half) or in the final half (just snap to the
@@ -566,13 +600,14 @@ function useGlobalTimer() {
     }
   }, [timer.configured]);
 
-  const setupManual = useCallback((minutes) => {
+  const setupManual = useCallback((minutes, seconds = 0) => {
     const now = Date.now();
-    const half = Math.max(10000, minutes * 60000);
+    const totalSeconds = Math.max(0, minutes) * 60 + Math.max(0, Math.min(59, seconds));
+    const half = Math.max(1000, totalSeconds * 1000);
     setTimer({
       configured: true,
       mode: 'manual',
-      endLabel: `Manual · ${minutes} min`,
+      endLabel: `Manual · ${formatClock(totalSeconds)}`,
       halfMs: half,
       currentHalf: 1,
       totalHalves: 1,
@@ -595,16 +630,17 @@ function useGlobalTimer() {
 
   const reset = useCallback(() => setTimer(defaultTimer()), [setTimer]);
 
-  return { timer, remainingMs, setupAuto, setupAutoAt, setupManual, setActivityLabel, recalculate, toggle, reset };
+  return { timer, remainingMs, setupAuto, setupAutoAt, setupManual, setActivityLabel, recalculate, updateAutoSettings, restartHalfWithBuffer, toggle, reset };
 }
 
-function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupManual, initialMode, initialHalftimeMins, initialBufferMins, initialActivityLabel, isConfigured, onReset }) {
+function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupManual, onUpdateAutoSettings, initialMode, initialHalftimeMins, initialBufferMins, initialActivityLabel, isConfigured, onReset }) {
   const [mode, setMode] = useState(initialMode || 'auto');
   const [preset, setPreset] = useState('custom');
   const [activityLabel, setActivityLabelState] = useState('');
   const [hour, setHour] = useState('');
   const [minute, setMinute] = useState('');
   const [minutes, setMinutes] = useState('15');
+  const [seconds, setSeconds] = useState('0');
   const [halftimeMins, setHalftimeMins] = useState(String(initialHalftimeMins ?? 5));
   const [bufferMins, setBufferMins] = useState(String(initialBufferMins ?? 2));
 
@@ -643,9 +679,10 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupMan
         onSetupAuto(hh, m, ht, buf, activityLabel);
       }
     } else {
-      const m = parseInt(minutes, 10);
-      if (!m || m <= 0) return;
-      onSetupManual(m);
+      const m = Math.max(0, parseInt(minutes, 10) || 0);
+      const s = Math.max(0, Math.min(59, parseInt(seconds, 10) || 0));
+      if (m <= 0 && s <= 0) return;
+      onSetupManual(m, s);
     }
     onClose();
   };
@@ -762,22 +799,56 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupMan
           <p className="text-white/30 text-xs mb-2 -mt-3 leading-relaxed">
             We'll subtract halftime and the end buffer from the remaining time, then split what's left evenly into two halves.
           </p>
+
+          {isConfigured && (
+            <BigButton
+              onClick={() => {
+                onUpdateAutoSettings(Math.max(0, parseInt(halftimeMins, 10) || 0), Math.max(0, parseInt(bufferMins, 10) || 0));
+                onClose();
+              }}
+              className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white/70 mb-1"
+            >
+              Save Halftime/Buffer Only
+            </BigButton>
+          )}
+          {isConfigured && (
+            <p className="text-white/30 text-xs mb-3 leading-relaxed">
+              Updates these numbers without restarting the clock or touching which half you're on. Use "Reset Half" on the clock to apply the new buffer to the countdown.
+            </p>
+          )}
         </>
       ) : (
         <>
           <p className="text-white/50 text-sm mb-5 leading-relaxed">
             Enter how long this period should run. It counts down once — tap it to pause or resume.
           </p>
-          <Field label="Length (minutes)">
-            <input
-              type="number"
-              inputMode="numeric"
-              min="1"
-              max="120"
-              value={minutes}
-              onChange={(e) => setMinutes(e.target.value)}
-              className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-4 text-3xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
-            />
+          <Field label="Length">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <div className="text-[10px] font-bold text-white/30 tracking-widest mb-1 text-center">MINUTES</div>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min="0"
+                  max="120"
+                  value={minutes}
+                  onChange={(e) => setMinutes(e.target.value)}
+                  className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-4 text-3xl font-extrabold text-white text-center outline-none focus:border-emerald-400/60 tabular"
+                />
+              </div>
+              <div>
+                <div className="text-[10px] font-bold text-white/30 tracking-widest mb-1 text-center">SECONDS</div>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min="0"
+                  max="59"
+                  value={seconds}
+                  onChange={(e) => setSeconds(e.target.value)}
+                  className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-4 text-3xl font-extrabold text-white text-center outline-none focus:border-emerald-400/60 tabular"
+                />
+              </div>
+            </div>
           </Field>
         </>
       )}
@@ -873,6 +944,7 @@ function TimerBar({ globalTimer }) {
           onSetupAuto={globalTimer.setupAuto}
           onSetupAutoAt={globalTimer.setupAutoAt}
           onSetupManual={globalTimer.setupManual}
+          onUpdateAutoSettings={globalTimer.updateAutoSettings}
           initialMode={timer.mode}
           initialHalftimeMins={timer.halftimeMins}
           initialBufferMins={timer.bufferMins}
@@ -950,14 +1022,25 @@ function TimerBar({ globalTimer }) {
         <div className="text-white/30 text-xs font-semibold flex items-center gap-1 py-1 landscape:py-0.5 px-2 truncate">
           <Icon name="Clock" size={12} /> {timer.endLabel} · hold clock to adjust
         </div>
-        {timer.mode === 'auto' && !!timer.targetEndTs && (
-          <button
-            onClick={() => globalTimer.recalculate()}
-            className="btn-press shrink-0 flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white/60"
-          >
-            <Icon name="RotateCw" size={11} /> Recalculate
-          </button>
-        )}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {timer.mode === 'auto' && (
+            <button
+              onClick={() => globalTimer.restartHalfWithBuffer()}
+              aria-label="Reset this half's countdown to the half length plus buffer"
+              className="btn-press flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white/60"
+            >
+              <Icon name="Repeat" size={11} /> Reset Half
+            </button>
+          )}
+          {timer.mode === 'auto' && !!timer.targetEndTs && (
+            <button
+              onClick={() => globalTimer.recalculate()}
+              className="btn-press flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white/60"
+            >
+              <Icon name="RotateCw" size={11} /> Recalculate
+            </button>
+          )}
+        </div>
       </div>
       <TimerSetupSheet
         open={setupOpen}
