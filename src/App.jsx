@@ -3,7 +3,7 @@ import Icon from './components/Icon.jsx';
 import IconButton from './components/IconButton.jsx';
 import Sheet from './components/Sheet.jsx';
 
-const APP_VERSION = '3.0.1';
+const APP_VERSION = '3.1.0';
 
 
 
@@ -1787,6 +1787,17 @@ function Football({ globalTimer, onBack }) {
     });
   };
 
+  // Auto-advance to the next half the moment the game clock hits 00:00, so the
+  // ref doesn't have to also remember to tap the chevron.
+  const timerJustFinishedRef = useRef(false);
+  useEffect(() => {
+    const finished = globalTimer.timer.finished;
+    if (finished && !timerJustFinishedRef.current) {
+      changeHalf(1);
+    }
+    timerJustFinishedRef.current = finished;
+  }, [globalTimer.timer.finished]);
+
   const TimeoutFooter = ({ team }) => {
     const remaining = team === 'A' ? fb.timeoutsA : fb.timeoutsB;
     const color = team === 'A' ? fb.colorA : fb.colorB;
@@ -1918,7 +1929,11 @@ const UNIVERSAL_CONFIG = {
 };
 
 function defaultUniversal() {
-  return { teamA: '', teamB: '', scoreA: 0, scoreB: 0, colorA: null, colorB: null, period: 1, half: 'Top', topTeam: 'A', balls: 0, strikes: 0, outs: 0 };
+  return { teamA: '', teamB: '', scoreA: 0, scoreB: 0, colorA: null, colorB: null, period: 1, half: 'Top', topTeam: 'A', balls: 0, strikes: 0, outs: 0, hockeyFormat: 'periods' };
+}
+
+function hockeyMaxUnit(hockeyFormat) {
+  return hockeyFormat === 'halves' ? 2 : 3;
 }
 
 const AT_BAT_BANNER_STYLES = {
@@ -1950,10 +1965,23 @@ function Universal({ sport, globalTimer, onBack }) {
   const changePeriod = (delta) => {
     setG((s) => {
       const next = s.period + delta;
-      const clamped = sport === 'soccer' ? Math.min(cfg.maxUnit, Math.max(1, next)) : Math.max(1, next);
+      const currentMax = sport === 'hockey' ? hockeyMaxUnit(s.hockeyFormat) : cfg.maxUnit;
+      const clamped = (sport === 'soccer' || sport === 'hockey') ? Math.min(currentMax, Math.max(1, next)) : Math.max(1, next);
       return { ...s, period: clamped };
     });
   };
+
+  // Auto-advance to the next period/half the moment the game clock hits 00:00
+  // (baseball tracks innings independently of the clock, so it's excluded).
+  const timerJustFinishedRef = useRef(false);
+  useEffect(() => {
+    if (sport !== 'hockey' && sport !== 'soccer') return;
+    const finished = globalTimer.timer.finished;
+    if (finished && !timerJustFinishedRef.current) {
+      changePeriod(1);
+    }
+    timerJustFinishedRef.current = finished;
+  }, [globalTimer.timer.finished, sport]);
 
   const toggleHalf = () => setG((s) => ({ ...s, half: s.half === 'Top' ? 'Bottom' : 'Top' }));
   const swapTopBottom = () => setG((s) => ({ ...s, topTeam: s.topTeam === 'A' ? 'B' : 'A' }));
@@ -2022,6 +2050,9 @@ function Universal({ sport, globalTimer, onBack }) {
 
   const resetCount = () => setG((s) => ({ ...s, balls: 0, strikes: 0 }));
 
+  const periodUnit = sport === 'hockey' && g.hockeyFormat === 'halves' ? 'Half' : cfg.unit;
+  const periodMaxUnit = sport === 'hockey' ? hockeyMaxUnit(g.hockeyFormat) : cfg.maxUnit;
+
   return (
     <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:h-dvh landscape:min-h-0">
       {banner && (
@@ -2057,10 +2088,10 @@ function Universal({ sport, globalTimer, onBack }) {
       <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 landscape:py-2 px-5 flex items-center justify-between shrink-0">
         <IconButton name="ChevronLeft" onClick={() => changePeriod(-1)} label="Previous period" />
         <div className="text-center">
-          <div className="text-xs font-extrabold tracking-widest text-white/40">{cfg.unit.toUpperCase()}</div>
+          <div className="text-xs font-extrabold tracking-widest text-white/40">{periodUnit.toUpperCase()}</div>
           <div className="text-3xl landscape:text-xl font-black tabular">
             {g.period}
-            <span className="text-white/30 text-lg">/{cfg.maxUnit}</span>
+            <span className="text-white/30 text-lg">/{periodMaxUnit}</span>
           </div>
         </div>
         <IconButton name="ChevronRight" onClick={() => changePeriod(1)} label="Next period" />
@@ -2135,6 +2166,15 @@ function Universal({ sport, globalTimer, onBack }) {
           onCustomName={(v) => setG((s) => ({ ...s, teamB: v }))}
           onCustomColor={(c) => setG((s) => ({ ...s, colorB: c }))}
         />
+        {sport === 'hockey' && (
+          <Field label="Format">
+            <Segmented
+              options={[{ value: 'periods', label: 'Periods (3)' }, { value: 'halves', label: 'Halves (2)' }]}
+              value={g.hockeyFormat || 'periods'}
+              onChange={(v) => setG((s) => ({ ...s, hockeyFormat: v, period: 1 }))}
+            />
+          </Field>
+        )}
         {sport === 'baseball' && (
           <BigButton
             onClick={swapTopBottom}
@@ -2366,6 +2406,21 @@ function Basketball({ globalTimer, onBack }) {
   };
 
   const setHalf = (half) => setBk((s) => ({ ...s, half }));
+
+  const advanceHalf = () => setBk((s) => {
+    const max = s.periodMode === 'quarters' ? 4 : 2;
+    return { ...s, half: Math.min(max, s.half + 1) };
+  });
+
+  // Auto-advance to the next half/quarter the moment the game clock hits 00:00.
+  const timerJustFinishedRef = useRef(false);
+  useEffect(() => {
+    const finished = globalTimer.timer.finished;
+    if (finished && !timerJustFinishedRef.current) {
+      advanceHalf();
+    }
+    timerJustFinishedRef.current = finished;
+  }, [globalTimer.timer.finished]);
 
   const undo = (team) => {
     setBk((s) => ({ ...s, [team === 'A' ? 'scoreA' : 'scoreB']: Math.max(0, (team === 'A' ? s.scoreA : s.scoreB) - 1) }));
