@@ -64,7 +64,7 @@
   * { -webkit-tap-highlight-color: transparent; }
   html, body {
     background: #000;
-    overscroll-behavior-y: none;
+    overscroll-behavior-y: auto;
     font-family: 'Inter', system-ui, sans-serif;
     height: 100%;
     height: 100dvh;
@@ -102,6 +102,13 @@
   }
   .pop-in { animation: popIn 0.15s ease-out; }
 
+  /* ---------- Splash screen: app icon fade ---------- */
+  @keyframes splashFadeOut {
+    0%, 72% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+  .splash-overlay { animation: splashFadeOut 1s ease-in forwards; }
+
   .btn-press { transition: transform 0.08s ease, background-color 0.15s ease, opacity 0.15s ease; touch-action: manipulation; -webkit-touch-callout: none; }
   .btn-press:active { transform: scale(0.95); }
   button, [role="button"], input[type="number"], input[type="tel"] { touch-action: manipulation; }
@@ -129,7 +136,7 @@
 
 const { useState, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = '1.12.0';
+const APP_VERSION = '2.0.1';
 
 /* ============================== ICONS ============================== */
 
@@ -326,6 +333,10 @@ function Sheet({ open, onClose, title, children }) {
   const [dragY, setDragY] = useState(0);
   const [dragging, setDragging] = useState(false);
 
+  // Drag can start from anywhere on the panel (not just the handle). A touch
+  // only ever turns into a dismiss-drag once the gesture is moving downward
+  // AND the panel's own scroll is already at the top — otherwise it's left
+  // alone so scrolling long sheet content (e.g. Settings) still works.
   const onDragStart = useCallback((e) => {
     const point = e.touches ? e.touches[0] : e;
     dragRef.current = { startY: point.clientY, lastY: point.clientY, lastT: Date.now(), velocity: 0, dy: 0 };
@@ -338,19 +349,26 @@ function Sheet({ open, onClose, title, children }) {
       const d = dragRef.current;
       if (!d) return;
       const point = e.touches ? e.touches[0] : e;
-      const dy = Math.max(0, point.clientY - d.startY);
       const now = Date.now();
       const dt = now - d.lastT;
       if (dt > 0) d.velocity = (point.clientY - d.lastY) / dt;
       d.lastY = point.clientY;
       d.lastT = now;
-      d.dy = dy;
-      setDragY(dy);
-      if (e.cancelable) e.preventDefault();
+
+      const rawDy = point.clientY - d.startY;
+      const atTop = !sheetRef.current || sheetRef.current.scrollTop <= 0;
+      if (rawDy > 0 && atTop) {
+        d.dy = rawDy;
+        setDragY(rawDy);
+        if (e.cancelable) e.preventDefault();
+      } else if (d.dy !== 0) {
+        d.dy = 0;
+        setDragY(0);
+      }
     };
     const onEnd = () => {
       const d = dragRef.current;
-      const shouldClose = d && (d.dy > 120 || d.velocity > 0.6);
+      const shouldClose = d && d.dy > 0 && (d.dy > 60 || d.velocity > 0.6);
       dragRef.current = null;
       setDragging(false);
       if (shouldClose) {
@@ -376,18 +394,16 @@ function Sheet({ open, onClose, title, children }) {
       <div className="absolute inset-0 bg-black/70" onClick={onClose} style={{ opacity: dragging ? Math.max(0.2, 1 - dragY / 300) : 1 }} />
       <div
         ref={sheetRef}
-        className={`${dragging ? '' : 'sheet-up'} relative w-full max-w-md bg-zinc-950 border-t border-white/10 rounded-t-3xl px-6 pt-5 pb-8 max-h-[85dvh] overflow-y-auto`}
+        className={`${dragging ? '' : 'sheet-up'} relative w-full max-w-md bg-zinc-950 border-t border-white/10 rounded-t-3xl px-6 pt-5 pb-8 max-h-[85dvh] overflow-y-auto cursor-grab`}
         style={{
           paddingBottom: 'calc(env(safe-area-inset-bottom) + 2rem)',
           transform: dragY ? `translateY(${dragY}px)` : undefined,
           transition: dragging ? 'none' : 'transform 0.2s ease',
         }}
+        onTouchStart={onDragStart}
+        onMouseDown={onDragStart}
       >
-        <div
-          className="flex justify-center items-center -mx-6 -mt-5 mb-4 py-3 cursor-grab touch-none"
-          onTouchStart={onDragStart}
-          onMouseDown={onDragStart}
-        >
+        <div className="flex justify-center items-center -mx-6 -mt-5 mb-4 py-3">
           <div className="h-1.5 w-12 rounded-full bg-white/20" />
         </div>
         <div className="flex items-center justify-between mb-5">
@@ -2440,7 +2456,73 @@ function basketballPeriodLabel(bk) {
   return halves[bk.half - 1] || `Half ${bk.half}`;
 }
 
-function BasketballHistoryPanel({ open, onClose, history, bk }) {
+function HistoryLogRow({ h, hc, hname, whenLabel, onDismiss }) {
+  const [dx, setDx] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const stateRef = useRef(null);
+
+  const onPointerDown = (e) => {
+    stateRef.current = { startX: e.clientX, startY: e.clientY, axis: null };
+  };
+  const onPointerMove = (e) => {
+    const st = stateRef.current;
+    if (!st) return;
+    const ddx = e.clientX - st.startX;
+    const ddy = e.clientY - st.startY;
+    if (!st.axis) {
+      if (Math.abs(ddx) < 8 && Math.abs(ddy) < 8) return;
+      st.axis = Math.abs(ddx) > Math.abs(ddy) ? 'x' : 'y';
+      if (st.axis === 'x') {
+        setDragging(true);
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+    }
+    if (st.axis !== 'x') return;
+    e.stopPropagation();
+    setDx(ddx);
+  };
+  const onPointerUp = (e) => {
+    const st = stateRef.current;
+    stateRef.current = null;
+    if (st && st.axis === 'x') {
+      e.stopPropagation();
+      if (Math.abs(dx) > 70) {
+        setDragging(false);
+        setDx(dx > 0 ? 600 : -600);
+        setTimeout(onDismiss, 180);
+        return;
+      }
+    }
+    setDragging(false);
+    setDx(0);
+  };
+
+  return (
+    <div
+      className="relative mb-1 last:mb-0 touch-pan-y"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+    >
+      <div
+        className={`flex items-center gap-2 py-2 px-2 rounded-lg border-l-4 ${hc.border} ${hc.bg}/15 bg-zinc-900`}
+        style={{
+          transform: `translateX(${dx}px)`,
+          opacity: Math.max(0, 1 - Math.abs(dx) / 140),
+          transition: dragging ? 'none' : 'transform 0.18s ease, opacity 0.18s ease',
+        }}
+      >
+        <span className={`w-3 h-3 rounded-full shrink-0 ${hc.bg} border border-white/20`} />
+        <span className="text-xs font-semibold flex-1 truncate">{hname}</span>
+        <span className="text-xs font-extrabold">+{h.pts}</span>
+        <span className="text-[10px] text-white/40 tabular shrink-0">{whenLabel}</span>
+      </div>
+    </div>
+  );
+}
+
+function BasketballHistoryPanel({ open, onClose, history, bk, onDismissEntry }) {
   const [dragY, setDragY] = useState(0);
   const draggingRef = useRef(false);
   const startYRef = useRef(0);
@@ -2474,7 +2556,7 @@ function BasketballHistoryPanel({ open, onClose, history, bk }) {
       >
         <div className="mx-auto mb-2 h-1.5 w-10 rounded-full bg-white/20" />
         <div className="flex items-center justify-between mb-2 px-1">
-          <div className="text-[10px] font-extrabold tracking-widest text-white/40">RECENT SCORING · SWIPE UP TO CLOSE</div>
+          <div className="text-[10px] font-extrabold tracking-widest text-white/40">RECENT SCORING</div>
           <button
             type="button"
             onClick={onClose}
@@ -2492,15 +2574,14 @@ function BasketballHistoryPanel({ open, onClose, history, bk }) {
             const hname = displayTeamName(h.team === 'A' ? bk.teamA : bk.teamB, h.team);
             const whenLabel = h.clockLabel ? `${h.clockLabel} · ${h.periodLabel}` : (h.periodLabel || '—');
             return (
-              <div
+              <HistoryLogRow
                 key={i}
-                className={`flex items-center gap-2 py-2 px-2 mb-1 last:mb-0 rounded-lg border-l-4 ${hc.border} ${hc.bg}/15`}
-              >
-                <span className={`w-3 h-3 rounded-full shrink-0 ${hc.bg} border border-white/20`} />
-                <span className="text-xs font-semibold flex-1 truncate">{hname}</span>
-                <span className="text-xs font-extrabold">+{h.pts}</span>
-                <span className="text-[10px] text-white/40 tabular shrink-0">{whenLabel}</span>
-              </div>
+                h={h}
+                hc={hc}
+                hname={hname}
+                whenLabel={whenLabel}
+                onDismiss={() => onDismissEntry(h)}
+              />
             );
           })
         )}
@@ -2549,6 +2630,10 @@ function Basketball({ globalTimer, onBack }) {
         history: s.history.slice(0, -1),
       };
     });
+  };
+
+  const dismissHistoryEntry = (entry) => {
+    setBk((s) => ({ ...s, history: s.history.filter((e) => e !== entry) }));
   };
 
   const setHalf = (half) => setBk((s) => ({ ...s, half }));
@@ -2622,6 +2707,7 @@ function Basketball({ globalTimer, onBack }) {
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
         history={bk.history}
+        onDismissEntry={dismissHistoryEntry}
         bk={bk}
       />
 
@@ -2698,9 +2784,38 @@ function Basketball({ globalTimer, onBack }) {
   );
 }
 
+/* ============================== SPLASH ============================== */
+
+function SplashScreen({ onDone }) {
+  const doneRef = useRef(false);
+  const finish = useCallback(() => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    onDone();
+  }, [onDone]);
+
+  useEffect(() => {
+    const t = setTimeout(finish, 1000);
+    return () => clearTimeout(t);
+  }, [finish]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] bg-black overflow-hidden splash-overlay flex flex-col items-center justify-center"
+      onClick={finish}
+      onTouchStart={finish}
+      role="button"
+      aria-label="Skip intro animation"
+    >
+      <img src="./icon-512.png" alt="" className="w-32 h-32 rounded-3xl" />
+    </div>
+  );
+}
+
 /* ============================== APP ============================== */
 
 function App() {
+  const [showSplash, setShowSplash] = useState(true);
   const [screen, setScreen] = useLocalStorage('refcourt_screen_v1', 'home');
   const globalTimer = useGlobalTimer();
   const [settings, setSettings] = useAppSettings();
@@ -2737,7 +2852,8 @@ function App() {
 
   return (
     <div className="h-dvh overflow-hidden">
-      <div className="h-full overflow-y-auto overscroll-contain">{content}</div>
+      <div className="h-full overflow-y-auto overscroll-y-auto">{content}</div>
+      {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
     </div>
   );
 }
