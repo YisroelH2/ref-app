@@ -3,7 +3,7 @@ import Icon from './components/Icon.jsx';
 import IconButton from './components/IconButton.jsx';
 import Sheet from './components/Sheet.jsx';
 
-const APP_VERSION = '3.1.0';
+const APP_VERSION = '3.1.1';
 
 
 
@@ -1575,7 +1575,7 @@ function Volleyball({ globalTimer, onBack }) {
   }
 
   return (
-    <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:h-dvh landscape:min-h-0">
+    <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:min-h-dvh">
       <EndGamePill onClick={() => setEndGameOpen(true)} />
       <Header title="Volleyball" onBack={onBack} onSettings={() => setSettingsOpen(true)} />
 
@@ -1825,7 +1825,7 @@ function Football({ globalTimer, onBack }) {
   };
 
   return (
-    <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:h-dvh landscape:min-h-0">
+    <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:min-h-dvh">
       <EndGamePill onClick={() => setEndGameOpen(true)} />
       <Header title="Football" onBack={onBack} onSettings={() => setSettingsOpen(true)} />
       <TimerBar globalTimer={globalTimer} />
@@ -2054,7 +2054,7 @@ function Universal({ sport, globalTimer, onBack }) {
   const periodMaxUnit = sport === 'hockey' ? hockeyMaxUnit(g.hockeyFormat) : cfg.maxUnit;
 
   return (
-    <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:h-dvh landscape:min-h-0">
+    <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:min-h-dvh">
       {banner && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 pointer-events-none">
           <div className={`pop-in rounded-3xl px-10 landscape:px-6 py-8 landscape:py-4 text-4xl landscape:text-2xl font-black tracking-wide text-center shadow-2xl ${AT_BAT_BANNER_STYLES[banner] || 'bg-white text-black'}`}>
@@ -2484,7 +2484,7 @@ function Basketball({ globalTimer, onBack }) {
     : [{ value: 1, label: '1st Half' }, { value: 2, label: '2nd Half' }];
 
   return (
-    <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:h-dvh landscape:min-h-0">
+    <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:min-h-dvh">
       <EndGamePill onClick={() => setEndGameOpen(true)} />
 
       <BasketballHistoryPanel
