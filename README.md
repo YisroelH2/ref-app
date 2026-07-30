@@ -1,21 +1,40 @@
 # YKP-refs — Camp Sports Referee Toolkit
 
-A single-file, mobile-first web app for camp sports referees. No build step — just static HTML.
+A mobile-first web app for camp sports referees, built with Vite + React + Tailwind CSS.
+
+## Project structure
+
+```
+index.html              Vite entry HTML
+src/main.jsx             React root
+src/App.jsx              Screens: Home, Volleyball, Football, Universal (soccer/hockey/baseball), Basketball
+src/index.css            Tailwind directives + global/keyframe CSS
+src/components/          Shared components (Icon, IconButton, Sheet, ...)
+public/                  manifest.json, icons, sw.js — copied as-is into the build output
+legacy/index.html         The old single-file (no-build, CDN-script) version, kept for reference
+```
 
 ## Run locally
 
-Open `index.html` directly, or serve it (recommended, since some browsers restrict `file://` pages):
+```
+npm install
+npm run dev
+```
+
+## Build
 
 ```
-npx serve .
+npm run build   # outputs to dist/
+npm run preview # serve the production build locally
 ```
 
 ## Deploy to GitHub Pages
 
-1. Push this folder to a GitHub repo.
-2. In the repo, go to **Settings → Pages**.
-3. Under "Build and deployment", set **Source** to `Deploy from a branch`, pick your branch (e.g. `main`) and `/ (root)`.
-4. Save — your app will be live at `https://<username>.github.io/<repo>/` within a minute or two.
+Deployment is automated via `.github/workflows/deploy.yml`, which builds with Vite and publishes `dist/` on every push to `main`.
+
+One-time setup: in the repo, go to **Settings → Pages** and set **Source** to `GitHub Actions` (not "Deploy from a branch" — that only works for static files, and this project now has a build step).
+
+The app is served at `https://<username>.github.io/ref-app/` — note the `base: '/ref-app/'` in `vite.config.js` matches this subpath; update it if the repo is ever renamed.
 
 ## Features
 

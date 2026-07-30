@@ -1,0 +1,2872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#000000" />
+<title>YKP-refs — Camp Sports Referee Toolkit</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏆</text></svg>" />
+
+<link rel="manifest" href="./manifest.json" />
+<link rel="apple-touch-icon" href="./icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="YKP-refs" />
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch((err) => {
+        console.warn('Service worker registration failed:', err);
+      });
+    });
+    // A new service worker takes control (via skipWaiting + clients.claim)
+    // whenever a deployed update is detected. Without this, a PWA left open
+    // in standalone mode keeps running the stale JS/HTML it already loaded
+    // until the user force-quits and reopens it. Reload once so an update
+    // check on app launch actually reaches the screen. Game state survives
+    // via localStorage, so this is safe mid-use.
+    let reloadedForUpdate = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloadedForUpdate) return;
+      reloadedForUpdate = true;
+      window.location.reload();
+    });
+  }
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=optional" rel="stylesheet" />
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    darkMode: 'class',
+    theme: {
+      extend: {
+        fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+        colors: { neon: '#39FF14' },
+        animation: {
+          'pulse-fast': 'pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        },
+      },
+    },
+  };
+</script>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+
+<style>
+  * { -webkit-tap-highlight-color: transparent; }
+  html, body {
+    background: #000;
+    overscroll-behavior-y: auto;
+    font-family: 'Inter', system-ui, sans-serif;
+    height: 100%;
+    height: 100dvh;
+    overflow: hidden;
+    width: 100%;
+  }
+  body {
+    -webkit-user-select: none;
+    user-select: none;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tabular { font-variant-numeric: tabular-nums; }
+  #root { height: 100vh; height: 100dvh; overflow: hidden; }
+
+  ::-webkit-scrollbar { display: none; }
+
+  @keyframes flashRed {
+    0%, 100% { background-color: rgba(239,68,68,0.15); }
+    50% { background-color: rgba(239,68,68,0.35); }
+  }
+  .flash-red { animation: flashRed 1s ease-in-out infinite; }
+
+  @keyframes sheetUp {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  .sheet-up { animation: sheetUp 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+
+  @keyframes popIn {
+    from { opacity: 0; transform: scale(0.92); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  .pop-in { animation: popIn 0.15s ease-out; }
+
+  /* ---------- Splash screen: app icon fade ---------- */
+  @keyframes splashFadeOut {
+    0%, 72% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+  .splash-overlay { animation: splashFadeOut 1s ease-in forwards; }
+
+  .btn-press { transition: transform 0.08s ease, background-color 0.15s ease, opacity 0.15s ease; touch-action: manipulation; -webkit-touch-callout: none; }
+  .btn-press:active { transform: scale(0.95); }
+  button, [role="button"], input[type="number"], input[type="tel"] { touch-action: manipulation; }
+
+  html.light-mode {
+    filter: invert(1) hue-rotate(180deg);
+  }
+  html.light-mode img,
+  html.light-mode video {
+    filter: invert(1) hue-rotate(180deg);
+  }
+  .emoji-safe {
+    display: inline-block;
+    filter: invert(1) hue-rotate(180deg);
+  }
+  html:not(.light-mode) .emoji-safe {
+    filter: none;
+  }
+</style>
+</head>
+<body class="bg-black text-white">
+<div id="root"></div>
+
+<script type="text/plain" id="app-source">
+
+const { useState, useEffect, useRef, useCallback } = React;
+
+const APP_VERSION = '3.0.1';
+
+/* ============================== ICONS ============================== */
+
+const ICON_FALLBACK = {
+  Pause: '⏸', Play: '▶', Settings: '⚙', Plus: '+', Minus: '−', RotateCcw: '↺',
+  X: '✕', Check: '✓', ChevronLeft: '‹', ChevronRight: '›', Users: '👥', Clock: '🕐',
+  Flag: '⚑', Timer: '⏱', ArrowLeftRight: '⇄', Volume2: '🔔', Star: '★', Home: '⌂',
+  RotateCw: '↻', ListRestart: '↺', SlidersHorizontal: '☰', CircleDot: '●', Trophy: '🏆',
+  Copy: '📋', Send: '➤', Lock: '🔒',
+};
+
+function Icon({ name, size = 24, className = '', strokeWidth = 2.5 }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.innerHTML = '';
+    let done = false;
+    try {
+      if (window.lucide && window.lucide[name] && window.lucide.createElement) {
+        const svg = window.lucide.createElement(window.lucide[name], {
+          width: size,
+          height: size,
+          stroke: 'currentColor',
+          'stroke-width': strokeWidth,
+          fill: 'none',
+        });
+        if (svg) {
+          svg.style.display = 'block';
+          el.appendChild(svg);
+          done = true;
+        }
+      }
+    } catch (e) { done = false; }
+    if (!done) {
+      el.textContent = ICON_FALLBACK[name] || '';
+      el.style.fontSize = Math.round(size * 0.8) + 'px';
+      el.style.lineHeight = 1;
+    }
+  }, [name, size, strokeWidth]);
+  return <span ref={ref} className={`inline-flex items-center justify-center shrink-0 ${className}`} style={{ width: size, height: size }} />;
+}
+
+/* ============================== HELPERS ============================== */
+
+function useLocalStorage(key, initial) {
+  const [state, setState] = useState(() => {
+    try {
+      const raw = window.localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : initial;
+    } catch (e) { return initial; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(key, JSON.stringify(state)); } catch (e) {}
+  }, [key, state]);
+  return [state, setState];
+}
+
+function pad2(n) { return String(Math.floor(Math.abs(n))).padStart(2, '0'); }
+
+function formatClock(totalSeconds) {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${pad2(m)}:${pad2(sec)}`;
+  return `${pad2(m)}:${pad2(sec)}`;
+}
+
+function nextOccurrence(hh, mm) {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), hh, mm, 0, 0);
+  if (d.getTime() <= now.getTime()) d.setDate(d.getDate() + 1);
+  return d.getTime();
+}
+
+function resolveClosestHour24(hour12, minute) {
+  const h = ((hour12 % 12) + 12) % 12;
+  const amTs = nextOccurrence(h, minute);
+  const pmTs = nextOccurrence(h + 12, minute);
+  return amTs <= pmTs ? h : h + 12;
+}
+
+/* ============================== CAMP SCHEDULE ============================== */
+
+const CAMP_SCHEDULE = [
+  { key: '1st', pill: '1st Activity', label: 'First Activity', startHour: 15, startMinute: 0, endHour: 16, endMinute: 0 },
+  { key: '2nd', pill: '2nd Activity', label: 'Second Activity', startHour: 16, startMinute: 10, endHour: 17, endMinute: 10 },
+  { key: '3rd', pill: '3rd Activity', label: 'Third Activity', startHour: 17, startMinute: 20, endHour: 18, endMinute: 20 },
+  { key: '4th', pill: '4th Activity', label: 'Fourth Activity', startHour: 19, startMinute: 30, endHour: 20, endMinute: 20 },
+];
+
+function todayAt(hh, mm) {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate(), hh, mm, 0, 0).getTime();
+}
+
+function detectCurrentActivity(now) {
+  const nowMs = (now || new Date()).getTime();
+  for (const slot of CAMP_SCHEDULE) {
+    if (nowMs < todayAt(slot.endHour, slot.endMinute)) return slot;
+  }
+  return null;
+}
+
+function formatHM(hh, mm) {
+  return new Date(2000, 0, 1, hh, mm).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function vibrate(pattern) {
+  try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
+}
+
+/* ============================== APP SETTINGS ============================== */
+
+const APP_SETTINGS_KEY = 'refcourt_app_settings_v1';
+
+function defaultAppSettings() {
+  return {
+    theme: 'dark',
+    footballTimeouts: 3,
+    volleyballRegularTarget: 16,
+    volleyballDecidingTarget: 11,
+    whatsappPhone: '',
+    volleyballTapToScore: false,
+    basketballFoulsEnabled: false,
+    selectedCamp: '',
+  };
+}
+
+function getAppSettings() {
+  try {
+    const raw = localStorage.getItem(APP_SETTINGS_KEY);
+    return raw ? { ...defaultAppSettings(), ...JSON.parse(raw) } : defaultAppSettings();
+  } catch (e) {
+    return defaultAppSettings();
+  }
+}
+
+function useAppSettings() {
+  const [settings, setSettings] = useLocalStorage(APP_SETTINGS_KEY, defaultAppSettings());
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('light-mode', settings.theme === 'light');
+  }, [settings.theme]);
+
+  return [settings, setSettings];
+}
+
+/* ============================== PRIMITIVES ============================== */
+
+function BigButton({ children, onClick, className = '', disabled = false }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={`btn-press select-none outline-none disabled:opacity-30 disabled:pointer-events-none ${className}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function IconButton({ name, onClick, size = 22, className = '', label }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      className={`btn-press flex items-center justify-center rounded-full bg-white/10 active:bg-white/20 ${className}`}
+      style={{ width: size + 26, height: size + 26 }}
+    >
+      <Icon name={name} size={size} />
+    </button>
+  );
+}
+
+function EndGamePill({ onClick }) {
+  return (
+    <div className="flex justify-center mb-4 landscape:mb-1">
+      <button
+        onClick={onClick}
+        aria-label="End Game"
+        className="btn-press flex items-center gap-2 rounded-full bg-orange-500/90 text-white px-7 landscape:px-5 py-3.5 landscape:py-1.5 text-sm font-extrabold tracking-widest active:bg-orange-600 shadow-lg shadow-orange-500/20 min-h-[52px] landscape:min-h-0"
+      >
+        <Icon name="Flag" size={18} /> END GAME
+      </button>
+    </div>
+  );
+}
+
+function Sheet({ open, onClose, title, children }) {
+  const sheetRef = useRef(null);
+  const dragRef = useRef(null);
+  const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+
+  // Drag can start from anywhere on the panel (not just the handle). A touch
+  // only ever turns into a dismiss-drag once the gesture is moving downward
+  // AND the panel's own scroll is already at the top — otherwise it's left
+  // alone so scrolling long sheet content (e.g. Settings) still works.
+  const onDragStart = useCallback((e) => {
+    const point = e.touches ? e.touches[0] : e;
+    dragRef.current = { startY: point.clientY, lastY: point.clientY, lastT: Date.now(), velocity: 0, dy: 0 };
+    setDragging(true);
+  }, []);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e) => {
+      const d = dragRef.current;
+      if (!d) return;
+      const point = e.touches ? e.touches[0] : e;
+      const now = Date.now();
+      const dt = now - d.lastT;
+      if (dt > 0) d.velocity = (point.clientY - d.lastY) / dt;
+      d.lastY = point.clientY;
+      d.lastT = now;
+
+      const rawDy = point.clientY - d.startY;
+      const atTop = !sheetRef.current || sheetRef.current.scrollTop <= 0;
+      if (rawDy > 0 && atTop) {
+        d.dy = rawDy;
+        setDragY(rawDy);
+        if (e.cancelable) e.preventDefault();
+      } else if (d.dy !== 0) {
+        d.dy = 0;
+        setDragY(0);
+      }
+    };
+    const onEnd = () => {
+      const d = dragRef.current;
+      const shouldClose = d && d.dy > 0 && (d.dy > 60 || d.velocity > 0.6);
+      dragRef.current = null;
+      setDragging(false);
+      if (shouldClose) {
+        onClose();
+      }
+      setDragY(0);
+    };
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onEnd);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onEnd);
+    return () => {
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onEnd);
+    };
+  }, [dragging, onClose]);
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center">
+      <div className="absolute inset-0 bg-black/70" onClick={onClose} style={{ opacity: dragging ? Math.max(0.2, 1 - dragY / 300) : 1 }} />
+      <div
+        ref={sheetRef}
+        className={`${dragging ? '' : 'sheet-up'} relative w-full max-w-md bg-zinc-950 border-t border-white/10 rounded-t-3xl px-6 pt-5 pb-8 landscape:pt-3 landscape:pb-5 max-h-[85dvh] landscape:max-h-[90vh] overflow-y-auto landscape:overflow-y-auto cursor-grab`}
+        style={{
+          paddingBottom: 'calc(env(safe-area-inset-bottom) + 2rem)',
+          transform: dragY ? `translateY(${dragY}px)` : undefined,
+          transition: dragging ? 'none' : 'transform 0.2s ease',
+        }}
+      >
+        <div
+          className="flex justify-center items-center -mx-6 -mt-5 landscape:-mt-3 mb-4 landscape:mb-2 py-3 landscape:py-1.5"
+          onTouchStart={onDragStart}
+          onMouseDown={onDragStart}
+        >
+          <div className="h-1.5 w-12 rounded-full bg-white/20" />
+        </div>
+        <div className="flex items-center justify-between mb-5 landscape:mb-3">
+          <h2 className="text-xl font-extrabold tracking-tight">{title}</h2>
+          <IconButton name="X" onClick={onClose} size={18} label="Close" />
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div className="mb-5">
+      <div className="text-xs font-bold uppercase tracking-wider text-white/40 mb-2">{label}</div>
+      {children}
+    </div>
+  );
+}
+
+const TextInput = React.forwardRef((props, ref) => {
+  return (
+    <input
+      {...props}
+      ref={ref}
+      className={`w-full rounded-xl bg-white/10 border border-white/10 px-4 py-3 text-lg font-semibold text-white placeholder-white/30 outline-none focus:border-emerald-400/60 ${props.className || ''}`}
+    />
+  );
+});
+
+function Stepper({ value, onChange, min = 0, max = 20 }) {
+  return (
+    <div className="flex items-center gap-3">
+      <IconButton name="Minus" size={18} onClick={() => onChange(Math.max(min, value - 1))} />
+      <div className="w-14 text-center text-2xl font-extrabold tabular">{value}</div>
+      <IconButton name="Plus" size={18} onClick={() => onChange(Math.min(max, value + 1))} />
+    </div>
+  );
+}
+
+function Segmented({ options, value, onChange }) {
+  return (
+    <div className="flex rounded-xl bg-white/10 p-1 gap-1">
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => onChange(opt.value)}
+          className={`btn-press flex-1 py-2.5 rounded-lg text-sm font-bold ${value === opt.value ? 'bg-white text-black' : 'text-white/60'}`}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ============================== TEAM COLORS ============================== */
+
+const TEAM_COLOR_PRESETS = [
+  { id: 'red', label: 'Red', swatch: 'bg-red-500', bg: 'bg-red-500', border: 'border-red-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'blue', label: 'Blue', swatch: 'bg-blue-500', bg: 'bg-blue-500', border: 'border-blue-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'green', label: 'Green', swatch: 'bg-emerald-500', bg: 'bg-emerald-500', border: 'border-emerald-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'yellow', label: 'Yellow', swatch: 'bg-yellow-400', bg: 'bg-yellow-400', border: 'border-yellow-300', text: 'text-black', sub: 'text-black/50', overlay: 'bg-white/35' },
+  { id: 'orange', label: 'Orange', swatch: 'bg-orange-500', bg: 'bg-orange-500', border: 'border-orange-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'purple', label: 'Purple', swatch: 'bg-purple-500', bg: 'bg-purple-500', border: 'border-purple-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'pink', label: 'Pink', swatch: 'bg-pink-500', bg: 'bg-pink-500', border: 'border-pink-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'sky', label: 'Sky', swatch: 'bg-sky-400', bg: 'bg-sky-400', border: 'border-sky-300', text: 'text-black', sub: 'text-black/50', overlay: 'bg-white/35' },
+  { id: 'white', label: 'White', swatch: 'bg-white', bg: 'bg-white', border: 'border-zinc-300', text: 'text-black', sub: 'text-black/50', overlay: 'bg-white/35' },
+  { id: 'black', label: 'Black', swatch: 'bg-zinc-800', bg: 'bg-zinc-800', border: 'border-zinc-600', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'brown', label: 'Brown', swatch: 'bg-amber-800', bg: 'bg-amber-800', border: 'border-amber-700', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'grey', label: 'Grey', swatch: 'bg-gray-500', bg: 'bg-gray-500', border: 'border-gray-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'navy', label: 'Navy Blue', swatch: 'bg-blue-900', bg: 'bg-blue-900', border: 'border-blue-800', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+  { id: 'darkgreen', label: 'Dark Green', swatch: 'bg-green-800', bg: 'bg-green-800', border: 'border-green-700', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
+];
+
+const DEFAULT_TEAM_COLOR = { bg: 'bg-zinc-900', border: 'border-white/10', text: 'text-white', sub: 'text-white/20', overlay: 'bg-white/10' };
+
+function teamColorClasses(colorId) {
+  const preset = TEAM_COLOR_PRESETS.find((c) => c.id === colorId);
+  if (!preset) return DEFAULT_TEAM_COLOR;
+  return { bg: preset.bg, border: preset.border, text: preset.text, sub: preset.sub, overlay: preset.overlay };
+}
+
+function displayTeamName(name, which) {
+  return name && name.trim() ? name : (which === 'A' ? 'Team A' : 'Team B');
+}
+
+function ColorPicker({ value, onChange }) {
+  return (
+    <div className="flex flex-wrap gap-3">
+      {TEAM_COLOR_PRESETS.map((c) => (
+        <button
+          key={c.id}
+          type="button"
+          onClick={() => onChange(value === c.id ? null : c.id)}
+          aria-label={c.label}
+          className={`btn-press w-11 h-11 rounded-full ${c.swatch} border-2 ${value === c.id ? 'border-white ring-2 ring-white/50' : 'border-white/20'}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ============================== CAMP TEAM ROSTER ============================== */
+
+const CAMP_ROSTERS = {
+  ykp8: {
+    label: 'YKP 8th Grade',
+    teams: [
+      { city: 'Klimavitch', counselor: 'Edelkopf', color: 'black' },
+      { city: 'Nevel', counselor: 'Wonder', color: 'red' },
+      { city: 'Kremenchuk', counselor: 'Fischer', color: 'blue' },
+      { city: 'Dnipropetrovsk', counselor: 'Margo', color: 'darkgreen' },
+      { city: 'Yekatrinaslav', counselor: 'Wineburg', color: 'yellow' },
+      { city: 'Rostov', counselor: 'Naparstak', color: 'brown' },
+      { city: 'Otvotsk', counselor: 'Raskin', color: 'orange' },
+      { city: 'Nezhin', counselor: 'Sason', color: 'purple' },
+      { city: 'Nikolayev', counselor: 'Baumgarten', color: 'grey' },
+      { city: 'Poltava', counselor: 'Drizin', color: 'navy' },
+    ],
+  },
+};
+
+function getCampTeams() {
+  const roster = CAMP_ROSTERS[getAppSettings().selectedCamp];
+  if (!roster) return [];
+  return roster.teams.map((t) => ({ ...t, label: `${t.city} - ${t.counselor}` }));
+}
+
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  const dp = [];
+  for (let i = 0; i <= m; i++) dp.push([i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+function fuzzyDistance(query, text) {
+  query = query.toLowerCase();
+  text = text.toLowerCase();
+  if (!query) return 0;
+  if (text.includes(query)) return 0;
+  const qLen = query.length;
+  let best = Infinity;
+  for (let i = 0; i < text.length; i++) {
+    for (let len = Math.max(1, qLen - 2); len <= qLen + 2; len++) {
+      if (i + len > text.length) continue;
+      const d = levenshtein(query, text.slice(i, i + len));
+      if (d < best) best = d;
+    }
+  }
+  return best;
+}
+
+function searchCampTeams(query) {
+  const campTeams = getCampTeams();
+  const q = query.trim();
+  if (!q) return campTeams;
+  const threshold = Math.max(2, Math.ceil(q.length * 0.5));
+  return campTeams
+    .map((t) => {
+      const colorLabel = (TEAM_COLOR_PRESETS.find((c) => c.id === t.color) || {}).label || t.color;
+      return {
+        team: t,
+        score: Math.min(
+          fuzzyDistance(q, t.city),
+          fuzzyDistance(q, t.counselor),
+          fuzzyDistance(q, t.label),
+          fuzzyDistance(q, colorLabel)
+        ),
+      };
+    })
+    .filter((s) => s.score <= threshold)
+    .sort((a, b) => a.score - b.score)
+    .map((s) => s.team);
+}
+
+function TeamPicker({ label, teamName, teamColor, onSelect, onCustomName, onCustomColor }) {
+  const [query, setQuery] = useState(teamName || '');
+  const [open, setOpen] = useState(false);
+  const [colorOpen, setColorOpen] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => { setQuery(teamName || ''); }, [teamName]);
+
+  const results = open ? searchCampTeams(query) : [];
+
+  const commit = () => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    const exact = getCampTeams().find((t) => t.label.toLowerCase() === trimmed.toLowerCase());
+    if (exact) {
+      onSelect(exact);
+      setQuery(exact.label);
+    } else {
+      onCustomName(trimmed);
+    }
+    setOpen(false);
+  };
+
+  const clearQuery = () => {
+    setQuery('');
+    setOpen(true);
+    if (inputRef.current) inputRef.current.focus();
+  };
+
+  return (
+    <Field label={label}>
+      <div className="relative">
+        <TextInput
+          ref={inputRef}
+          value={query}
+          onFocus={() => setOpen(true)}
+          onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); e.target.blur(); } }}
+          onBlur={commit}
+          maxLength={20}
+          placeholder="Team name..."
+          className={query ? 'pr-11' : ''}
+        />
+        {query && (
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={clearQuery}
+            aria-label="Clear search"
+            className="btn-press absolute right-2.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-white/15 active:bg-white/25 flex items-center justify-center text-white/60"
+          >
+            <Icon name="X" size={14} />
+          </button>
+        )}
+      </div>
+      {open && results.length > 0 && (
+        <div className="mt-2 rounded-xl bg-white/5 border border-white/10 overflow-hidden max-h-64 overflow-y-auto">
+          {results.map((t) => (
+            <button
+              key={t.label}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { onSelect(t); setQuery(t.label); setOpen(false); }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-left border-b border-white/5 last:border-0 active:bg-white/10"
+            >
+              <span className={`w-5 h-5 rounded-full shrink-0 ${teamColorClasses(t.color).bg} border border-white/20`} />
+              <span className="font-semibold">{t.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <p className="text-white/30 text-xs mt-2 leading-relaxed">
+        These are just suggestions — type any name and hit enter.
+      </p>
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={() => setColorOpen((o) => !o)}
+          className="btn-press w-full flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 px-3 py-2.5"
+        >
+          <span className={`w-5 h-5 rounded-full shrink-0 ${teamColorClasses(teamColor).bg} border border-white/20`} />
+          <span className="text-sm font-bold text-white/70">Change Color</span>
+          <Icon
+            name="ChevronRight"
+            size={14}
+            className={`text-white/30 ml-auto transition-transform ${colorOpen ? 'rotate-90' : ''}`}
+          />
+        </button>
+        {colorOpen && (
+          <div className="mt-3">
+            <ColorPicker value={teamColor} onChange={onCustomColor} />
+          </div>
+        )}
+      </div>
+    </Field>
+  );
+}
+
+/* ============================== GLOBAL TIMER ============================== */
+
+const TIMER_KEY = 'refcourt_timer_v1';
+
+function defaultTimer() {
+  return {
+    configured: false,
+    mode: 'auto',
+    endLabel: '',
+    halfMs: 0,
+    currentHalf: 1,
+    totalHalves: 2,
+    periodEndTs: 0,
+    isRunning: false,
+    pausedRemainingMs: 0,
+    finished: false,
+    halftimeMins: 5,
+    bufferMins: 2,
+    activityLabel: '',
+    targetEndTs: 0,
+  };
+}
+
+function useGlobalTimer() {
+  const [timer, setTimer] = useLocalStorage(TIMER_KEY, defaultTimer());
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick((n) => n + 1), 250);
+    return () => clearInterval(id);
+  }, []);
+
+  let remainingMs = 0;
+  if (timer.configured && !timer.finished) {
+    remainingMs = timer.isRunning ? Math.max(0, timer.periodEndTs - Date.now()) : timer.pausedRemainingMs;
+  }
+
+  useEffect(() => {
+    if (!timer.configured || !timer.isRunning || timer.finished) return;
+    if (remainingMs <= 0) {
+      // Use unclamped overshoot (not the clamped remainingMs) so a backgrounded/throttled
+      // tab that wakes up long after this half should have ended doesn't get handed a
+      // brand-new full-length next half — it looks like the clock silently "reset."
+      const overshoot = Math.max(0, Date.now() - timer.periodEndTs);
+      if (timer.currentHalf < timer.totalHalves && overshoot < timer.halfMs) {
+        vibrate([180, 100, 180]);
+        setTimer((t) => {
+          const remaining = Math.max(0, t.halfMs - overshoot);
+          return {
+            ...t,
+            currentHalf: t.currentHalf + 1,
+            // Always stop at the half boundary — never auto-run into the next half.
+            // The ref has to tap to resume, same as a manual pause.
+            isRunning: false,
+            periodEndTs: Date.now() + remaining,
+            pausedRemainingMs: remaining,
+          };
+        });
+      } else {
+        vibrate([250, 120, 250, 120, 250]);
+        setTimer((t) => ({ ...t, finished: true, isRunning: false, pausedRemainingMs: 0 }));
+      }
+    }
+  }, [remainingMs, timer.configured, timer.isRunning, timer.finished, timer.currentHalf, timer.totalHalves, setTimer]);
+
+  const warnBucketRef = useRef(null);
+  useEffect(() => {
+    if (!timer.configured || !timer.isRunning || timer.finished) {
+      warnBucketRef.current = null;
+      return;
+    }
+    const secs = Math.ceil(remainingMs / 1000);
+    if (secs > 0 && secs <= 30 && secs % 5 === 0) {
+      if (warnBucketRef.current !== secs) {
+        warnBucketRef.current = secs;
+        vibrate([90, 50, 90]);
+      }
+    } else if (secs > 30) {
+      warnBucketRef.current = null;
+    }
+  }, [remainingMs, timer.configured, timer.isRunning, timer.finished]);
+
+  const applyAutoSetup = useCallback((endTs, halftimeMins, bufferMins, activityLabel) => {
+    const now = Date.now();
+    const totalMs = Math.max(60000, endTs - now);
+    const ht = Math.max(0, halftimeMins || 0);
+    const buf = Math.max(0, bufferMins || 0);
+    const deductionMs = (ht + buf) * 60000;
+    const playableMs = Math.max(60000, totalMs - deductionMs);
+    const half = playableMs / 2;
+    const label = 'Ends ' + new Date(endTs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    setTimer({
+      configured: true,
+      mode: 'auto',
+      endLabel: label,
+      halfMs: half,
+      currentHalf: 1,
+      totalHalves: 2,
+      periodEndTs: now + half,
+      isRunning: true,
+      pausedRemainingMs: half,
+      finished: false,
+      halftimeMins: ht,
+      bufferMins: buf,
+      activityLabel: activityLabel || '',
+      targetEndTs: endTs,
+    });
+  }, [setTimer]);
+
+  const setupAuto = useCallback((hh, mm, halftimeMins, bufferMins, activityLabel) => {
+    applyAutoSetup(nextOccurrence(hh, mm), halftimeMins, bufferMins, activityLabel);
+  }, [applyAutoSetup]);
+
+  const setupAutoAt = useCallback((endTs, halftimeMins, bufferMins, activityLabel) => {
+    applyAutoSetup(endTs, halftimeMins, bufferMins, activityLabel);
+  }, [applyAutoSetup]);
+
+  const setActivityLabel = useCallback((label) => {
+    setTimer((t) => ({ ...t, activityLabel: label }));
+  }, [setTimer]);
+
+  // Re-splits whatever time is left before the original scheduled end across the
+  // half(s) still to play, so it's correct whether called mid-Half-1 (still needs
+  // to leave room for a whole next half) or in the final half (just snap to the
+  // target). Also re-reserves halftime/buffer minutes that haven't happened yet.
+  const recalculate = useCallback(() => {
+    setTimer((t) => {
+      if (!t.targetEndTs || t.mode !== 'auto') return t;
+      const now = Date.now();
+      const remainingHalves = Math.max(1, t.totalHalves - t.currentHalf + 1);
+      const stillToReserveMins = t.currentHalf === 1 ? (t.halftimeMins || 0) + (t.bufferMins || 0) : (t.bufferMins || 0);
+      const totalRemaining = Math.max(10000, (t.targetEndTs - now) - stillToReserveMins * 60000);
+      const newHalfMs = Math.max(10000, totalRemaining / remainingHalves);
+      if (t.isRunning) {
+        return { ...t, halfMs: newHalfMs, periodEndTs: now + newHalfMs };
+      }
+      return { ...t, halfMs: newHalfMs, pausedRemainingMs: newHalfMs };
+    });
+    vibrate(40);
+  }, [setTimer]);
+
+  useEffect(() => {
+    if (!timer.configured && !timer.activityLabel) {
+      const slot = detectCurrentActivity();
+      if (slot) {
+        setTimer((t) => (t.configured || t.activityLabel ? t : { ...t, activityLabel: slot.label }));
+      }
+    }
+  }, [timer.configured]);
+
+  const setupManual = useCallback((minutes) => {
+    const now = Date.now();
+    const half = Math.max(10000, minutes * 60000);
+    setTimer({
+      configured: true,
+      mode: 'manual',
+      endLabel: `Manual · ${minutes} min`,
+      halfMs: half,
+      currentHalf: 1,
+      totalHalves: 1,
+      periodEndTs: now + half,
+      isRunning: true,
+      pausedRemainingMs: half,
+      finished: false,
+    });
+  }, [setTimer]);
+
+  const toggle = useCallback(() => {
+    setTimer((t) => {
+      if (!t.configured || t.finished) return t;
+      if (t.isRunning) {
+        return { ...t, isRunning: false, pausedRemainingMs: Math.max(0, t.periodEndTs - Date.now()) };
+      }
+      return { ...t, isRunning: true, periodEndTs: Date.now() + t.pausedRemainingMs };
+    });
+  }, [setTimer]);
+
+  const reset = useCallback(() => setTimer(defaultTimer()), [setTimer]);
+
+  return { timer, remainingMs, setupAuto, setupAutoAt, setupManual, setActivityLabel, recalculate, toggle, reset };
+}
+
+function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupManual, initialMode, initialHalftimeMins, initialBufferMins, initialActivityLabel, isConfigured, onReset }) {
+  const [mode, setMode] = useState(initialMode || 'auto');
+  const [preset, setPreset] = useState('custom');
+  const [activityLabel, setActivityLabelState] = useState('');
+  const [hour, setHour] = useState('');
+  const [minute, setMinute] = useState('');
+  const [minutes, setMinutes] = useState('15');
+  const [halftimeMins, setHalftimeMins] = useState(String(initialHalftimeMins ?? 5));
+  const [bufferMins, setBufferMins] = useState(String(initialBufferMins ?? 2));
+
+  useEffect(() => {
+    if (open) {
+      setMode(initialMode || 'auto');
+      setHalftimeMins(String(initialHalftimeMins ?? 5));
+      setBufferMins(String(initialBufferMins ?? 2));
+      setHour('');
+      setMinute('');
+
+      const matchedSlot = CAMP_SCHEDULE.find((s) => s.label === initialActivityLabel);
+      const detected = detectCurrentActivity();
+      if (matchedSlot) {
+        setPreset(matchedSlot.key);
+      } else {
+        setPreset(detected ? detected.key : 'custom');
+      }
+      setActivityLabelState(initialActivityLabel || (detected ? detected.label : ''));
+    }
+  }, [open, initialMode, initialHalftimeMins, initialBufferMins, initialActivityLabel]);
+
+  const selectedSlot = CAMP_SCHEDULE.find((s) => s.key === preset);
+
+  const start = () => {
+    if (mode === 'auto') {
+      const ht = Math.max(0, parseInt(halftimeMins, 10) || 0);
+      const buf = Math.max(0, parseInt(bufferMins, 10) || 0);
+      if (selectedSlot) {
+        onSetupAutoAt(todayAt(selectedSlot.endHour, selectedSlot.endMinute), ht, buf, selectedSlot.label);
+      } else {
+        const h12 = parseInt(hour, 10);
+        const m = parseInt(minute, 10);
+        if (!h12 || h12 < 1 || h12 > 12 || isNaN(m) || m < 0 || m > 59) return;
+        const hh = resolveClosestHour24(h12, m);
+        onSetupAuto(hh, m, ht, buf, activityLabel);
+      }
+    } else {
+      const m = parseInt(minutes, 10);
+      if (!m || m <= 0) return;
+      onSetupManual(m);
+    }
+    onClose();
+  };
+
+  const deleteTimer = () => {
+    onReset();
+    onClose();
+  };
+
+  return (
+    <Sheet open={open} onClose={onClose} title="Game Clock">
+      <Field label="Timer Mode">
+        <Segmented
+          options={[
+            { value: 'auto', label: 'Auto-Split' },
+            { value: 'manual', label: 'Manual Countdown' },
+          ]}
+          value={mode}
+          onChange={setMode}
+        />
+      </Field>
+
+      {mode === 'auto' ? (
+        <>
+          <p className="text-white/50 text-sm mb-5 leading-relaxed">
+            Pick today's activity slot, or go custom for a one-off time. We'll split the remaining time evenly into two halves and start the countdown.
+          </p>
+          <Field label="Activity">
+            <div className="grid grid-cols-3 gap-2">
+              {CAMP_SCHEDULE.map((slot) => (
+                <button
+                  key={slot.key}
+                  type="button"
+                  onClick={() => setPreset(slot.key)}
+                  className={`btn-press rounded-xl py-4 text-sm font-bold ${preset === slot.key ? 'bg-white text-black' : 'bg-white/10 text-white/70'}`}
+                >
+                  {slot.pill}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setPreset('custom')}
+                className={`btn-press rounded-xl py-4 text-sm font-bold ${preset === 'custom' ? 'bg-white text-black' : 'bg-white/10 text-white/70'}`}
+              >
+                Custom
+              </button>
+            </div>
+          </Field>
+
+          {selectedSlot ? (
+            <div className="rounded-2xl bg-white/5 border border-white/10 py-4 mb-5 text-center">
+              <div className="text-[10px] font-bold text-white/30 tracking-widest mb-1">ENDS AT</div>
+              <div className="text-3xl font-extrabold tabular">{formatHM(selectedSlot.endHour, selectedSlot.endMinute)}</div>
+            </div>
+          ) : (
+            <Field label="Activity ends at">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="text-[10px] font-bold text-white/30 tracking-widest mb-1 text-center">HOUR</div>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="1"
+                    max="12"
+                    value={hour}
+                    onChange={(e) => setHour(e.target.value)}
+                    placeholder="7"
+                    className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-4 text-3xl font-extrabold text-white text-center outline-none focus:border-emerald-400/60 tabular"
+                  />
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-white/30 tracking-widest mb-1 text-center">MINUTE</div>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    max="59"
+                    value={minute}
+                    onChange={(e) => setMinute(e.target.value)}
+                    placeholder="00"
+                    className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-4 text-3xl font-extrabold text-white text-center outline-none focus:border-emerald-400/60 tabular"
+                  />
+                </div>
+              </div>
+              <p className="text-white/30 text-xs mt-2 leading-relaxed">
+                No need for AM/PM — we'll pick whichever is sooner.
+              </p>
+            </Field>
+          )}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Halftime (mins)">
+              <input
+                type="number"
+                inputMode="numeric"
+                min="0"
+                max="60"
+                value={halftimeMins}
+                onChange={(e) => setHalftimeMins(e.target.value)}
+                className="w-full rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-2xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
+              />
+            </Field>
+            <Field label="End Buffer (mins)">
+              <input
+                type="number"
+                inputMode="numeric"
+                min="0"
+                max="30"
+                value={bufferMins}
+                onChange={(e) => setBufferMins(e.target.value)}
+                className="w-full rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-2xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
+              />
+            </Field>
+          </div>
+          <p className="text-white/30 text-xs mb-2 -mt-3 leading-relaxed">
+            We'll subtract halftime and the end buffer from the remaining time, then split what's left evenly into two halves.
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="text-white/50 text-sm mb-5 leading-relaxed">
+            Enter how long this period should run. It counts down once — tap it to pause or resume.
+          </p>
+          <Field label="Length (minutes)">
+            <input
+              type="number"
+              inputMode="numeric"
+              min="1"
+              max="120"
+              value={minutes}
+              onChange={(e) => setMinutes(e.target.value)}
+              className="w-full rounded-xl bg-white/10 border border-white/10 px-4 py-4 text-3xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
+            />
+          </Field>
+        </>
+      )}
+
+      <BigButton
+        onClick={start}
+        className="w-full rounded-2xl bg-emerald-400 text-black text-lg font-extrabold py-5"
+      >
+        Start Countdown
+      </BigButton>
+
+      {isConfigured && (
+        <BigButton
+          onClick={deleteTimer}
+          className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-3"
+        >
+          Reset / Delete Timer
+        </BigButton>
+      )}
+    </Sheet>
+  );
+}
+
+function TimerBar({ globalTimer }) {
+  const { timer, remainingMs, toggle, reset } = globalTimer;
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [driftDismissed, setDriftDismissed] = useState(false);
+  const driftShownRef = useRef(false);
+  const pressTimerRef = useRef(null);
+  const longPressFiredRef = useRef(false);
+
+  const clearPressTimer = () => {
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+  };
+
+  const handlePillPointerDown = () => {
+    longPressFiredRef.current = false;
+    clearPressTimer();
+    pressTimerRef.current = setTimeout(() => {
+      longPressFiredRef.current = true;
+      vibrate(40);
+      setSetupOpen(true);
+    }, 550);
+  };
+
+  const handlePillPointerUp = () => {
+    clearPressTimer();
+    if (!longPressFiredRef.current) toggle();
+  };
+
+  const handlePillPointerLeave = () => {
+    clearPressTimer();
+  };
+
+  useEffect(() => {
+    setDriftDismissed(false);
+  }, [timer.currentHalf, timer.configured]);
+
+  const showDrift =
+    timer.configured &&
+    !timer.finished &&
+    timer.mode === 'auto' &&
+    timer.currentHalf >= timer.totalHalves &&
+    !!timer.targetEndTs &&
+    !driftDismissed &&
+    Math.abs(timer.periodEndTs - timer.targetEndTs) > 2 * 60000;
+
+  useEffect(() => {
+    if (showDrift && !driftShownRef.current) {
+      vibrate([60, 40, 60, 40, 60]);
+      driftShownRef.current = true;
+    } else if (!showDrift) {
+      driftShownRef.current = false;
+    }
+  }, [showDrift]);
+
+  if (!timer.configured) {
+    return (
+      <>
+        <button
+          onClick={() => setSetupOpen(true)}
+          className="btn-press w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-white/20 py-4 landscape:py-2 text-white/60 font-bold text-sm mb-4 landscape:mb-1"
+        >
+          <Icon name="Clock" size={18} />
+          Set Game Clock
+        </button>
+        <TimerSetupSheet
+          open={setupOpen}
+          onClose={() => setSetupOpen(false)}
+          onSetupAuto={globalTimer.setupAuto}
+          onSetupAutoAt={globalTimer.setupAutoAt}
+          onSetupManual={globalTimer.setupManual}
+          initialMode={timer.mode}
+          initialHalftimeMins={timer.halftimeMins}
+          initialBufferMins={timer.bufferMins}
+          initialActivityLabel={timer.activityLabel}
+          isConfigured={timer.configured}
+          onReset={reset}
+        />
+      </>
+    );
+  }
+
+  if (timer.finished) {
+    return (
+      <div className="flash-red rounded-2xl border-2 border-red-500 py-4 landscape:py-1.5 px-4 landscape:px-3 mb-4 landscape:mb-1 flex items-center justify-between">
+        <div>
+          <div className="text-red-400 text-xs font-extrabold tracking-widest">TIME'S UP</div>
+          <div className="text-2xl landscape:text-lg font-black tabular text-white">00:00</div>
+        </div>
+        <IconButton name="RotateCcw" onClick={reset} label="Reset timer" />
+      </div>
+    );
+  }
+
+  const seconds = remainingMs / 1000;
+  const isRunning = timer.isRunning;
+
+  return (
+    <div className="mb-4 landscape:mb-1">
+      <button
+        onPointerDown={handlePillPointerDown}
+        onPointerUp={handlePillPointerUp}
+        onPointerLeave={handlePillPointerLeave}
+        onPointerCancel={handlePillPointerLeave}
+        onContextMenu={(e) => e.preventDefault()}
+        className={`btn-press w-full rounded-2xl border-2 py-4 landscape:py-1.5 px-5 landscape:px-3 flex items-center justify-between transition-colors ${
+          isRunning ? 'border-emerald-400/40 bg-emerald-400/5' : 'border-red-500 bg-red-500/10 animate-pulse-fast'
+        }`}
+      >
+        <div className="text-left">
+          <div className={`text-xs font-extrabold tracking-widest ${isRunning ? 'text-emerald-400' : 'text-red-400'}`}>
+            {timer.totalHalves > 1 ? `HALF ${timer.currentHalf} ` : ''}{isRunning ? '· RUNNING' : '· PAUSED'}
+          </div>
+          <div className={`text-4xl landscape:text-2xl font-black tabular ${isRunning ? 'text-white' : 'text-red-400'}`}>
+            {formatClock(seconds)}
+          </div>
+        </div>
+        <Icon name={isRunning ? 'Pause' : 'Play'} size={30} className={isRunning ? 'text-emerald-400' : 'text-red-400'} />
+      </button>
+
+      {showDrift && (
+        <div className="mt-2 landscape:mt-1 rounded-2xl bg-amber-400/15 border border-amber-400/40 px-4 py-3 landscape:py-2">
+          <div className="text-amber-300 text-xs font-bold leading-snug mb-2">
+            {timer.periodEndTs > timer.targetEndTs ? 'Running behind schedule' : 'Running ahead of schedule'} — at this pace you'll finish around{' '}
+            {new Date(timer.periodEndTs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} instead of{' '}
+            {new Date(timer.targetEndTs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}.
+          </div>
+          <div className="flex gap-2">
+            <BigButton
+              onClick={() => { globalTimer.recalculate(); setDriftDismissed(true); }}
+              className="flex-1 rounded-xl bg-amber-400 text-black py-2.5 text-xs font-extrabold"
+            >
+              Adjust to {new Date(timer.targetEndTs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+            </BigButton>
+            <BigButton
+              onClick={() => setDriftDismissed(true)}
+              className="flex-1 rounded-xl bg-white/10 py-2.5 text-xs font-bold text-white/60"
+            >
+              Keep As Is
+            </BigButton>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mt-1.5 landscape:mt-0.5 gap-2">
+        <div className="text-white/30 text-xs font-semibold flex items-center gap-1 py-1 landscape:py-0.5 px-2 truncate">
+          <Icon name="Clock" size={12} /> {timer.endLabel} · hold clock to adjust
+        </div>
+        {timer.mode === 'auto' && !!timer.targetEndTs && (
+          <button
+            onClick={() => globalTimer.recalculate()}
+            className="btn-press shrink-0 flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white/60"
+          >
+            <Icon name="RotateCw" size={11} /> Recalculate
+          </button>
+        )}
+      </div>
+      <TimerSetupSheet
+        open={setupOpen}
+        onClose={() => setSetupOpen(false)}
+        onSetupAuto={globalTimer.setupAuto}
+        onSetupAutoAt={globalTimer.setupAutoAt}
+        onSetupManual={globalTimer.setupManual}
+        initialMode={timer.mode}
+        initialHalftimeMins={timer.halftimeMins}
+        initialBufferMins={timer.bufferMins}
+        initialActivityLabel={timer.activityLabel}
+        isConfigured={timer.configured}
+        onReset={reset}
+      />
+    </div>
+  );
+}
+
+/* ============================== HEADER ============================== */
+
+function LiveClock({ className }) {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <span className={className}>{now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>;
+}
+
+function Header({ title, onBack, onSettings }) {
+  return (
+    <div className="flex items-center justify-between mb-4 landscape:mb-1 landscape:py-1 landscape:px-3">
+      <div className="flex items-center gap-2">
+        {onBack && <IconButton name="ChevronLeft" onClick={onBack} label="Back" />}
+        <h1 className="text-2xl landscape:text-lg font-extrabold tracking-tight">{title}</h1>
+      </div>
+      <div className="flex items-center gap-2">
+        <LiveClock className="text-white/40 text-sm font-bold tabular mr-1" />
+        {onSettings && <IconButton name="Settings" onClick={onSettings} label="Settings" />}
+      </div>
+    </div>
+  );
+}
+
+/* ============================== SHARED SCORE HALF ============================== */
+
+function ScoreHalf({ name, score, onScore, onUndo, footer, scoreClassName = 'text-8xl', color, locked = false }) {
+  const c = teamColorClasses(color);
+  return (
+    <button
+      onClick={() => { if (locked) { vibrate(15); return; } onScore(); }}
+      aria-disabled={locked}
+      className={`btn-press flex-1 rounded-3xl ${c.bg} border-2 ${c.border} flex flex-col items-center justify-center gap-2 landscape:gap-1 relative overflow-hidden py-4 landscape:py-2 px-4 landscape:px-3 landscape:h-full landscape:min-h-0 ${locked ? 'opacity-40 saturate-[.4]' : ''}`}
+    >
+      <div className={`${c.sub} text-xs font-extrabold tracking-widest self-start flex items-center gap-1`}>
+        {locked && <Icon name="Lock" size={11} />}
+        {locked ? 'FIELDING · LOCKED' : 'TAP TO SCORE'}
+      </div>
+      <div className={`text-lg landscape:text-sm font-bold ${c.text} opacity-70 text-center truncate max-w-full`}>{name}</div>
+      <div className={`${scoreClassName} landscape:text-4xl font-black tabular ${c.text}`}>{score}</div>
+      {footer}
+      <div
+        role="button"
+        onClick={(e) => { e.stopPropagation(); onUndo(); }}
+        className={`btn-press absolute bottom-3 landscape:bottom-1.5 right-3 landscape:right-1.5 w-11 h-11 landscape:w-9 landscape:h-9 rounded-full ${c.overlay} ${c.text} flex items-center justify-center`}
+      >
+        <Icon name="Minus" size={18} />
+      </div>
+    </button>
+  );
+}
+
+/* ============================== SHARED END GAME ============================== */
+
+const ACTIVITY_PERIODS = CAMP_SCHEDULE.map((s) => s.label);
+
+function EndGameSheet({ open, onClose, sportLabel, teamA: teamARaw, teamB: teamBRaw, scoreA, scoreB, globalTimer, winnerOverride }) {
+  const teamA = displayTeamName(teamARaw, 'A');
+  const teamB = displayTeamName(teamBRaw, 'B');
+  const [activityPeriod, setActivityPeriodState] = useState(ACTIVITY_PERIODS[0]);
+  const [appSettings] = useLocalStorage(APP_SETTINGS_KEY, defaultAppSettings());
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setCopied(false);
+      const syncedLabel = globalTimer && globalTimer.timer.activityLabel;
+      const detected = detectCurrentActivity();
+      setActivityPeriodState(syncedLabel || (detected ? detected.label : ACTIVITY_PERIODS[0]));
+    }
+  }, [open]);
+
+  const setActivityPeriod = (label) => {
+    setActivityPeriodState(label);
+    if (globalTimer) globalTimer.setActivityLabel(label);
+  };
+
+  const winnerName = winnerOverride !== undefined ? winnerOverride : (scoreA > scoreB ? teamA : scoreB > scoreA ? teamB : null);
+  const message = winnerName
+    ? `${winnerName} wins ${sportLabel} ${activityPeriod}.`
+    : `${sportLabel} ${activityPeriod} ended in a tie, ${scoreA}-${scoreB}.`;
+
+  const copyMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(message);
+    } catch (e) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = message;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch (e2) {}
+    }
+    setCopied(true);
+    vibrate(30);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const sendWhatsApp = () => {
+    const phone = (appSettings.whatsappPhone || '').replace(/\D/g, '');
+    const url = phone
+      ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
+      : `https://wa.me/?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank');
+  };
+
+  return (
+    <Sheet open={open} onClose={onClose} title="End Game">
+      <Field label="Activity Period">
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          {ACTIVITY_PERIODS.map((p) => (
+            <button
+              key={p}
+              onClick={() => setActivityPeriod(p)}
+              className={`btn-press rounded-xl py-3 text-sm font-bold ${activityPeriod === p ? 'bg-white text-black' : 'bg-white/10 text-white/70'}`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+        <TextInput
+          value={activityPeriod}
+          onChange={(e) => setActivityPeriod(e.target.value)}
+          placeholder="Custom period name..."
+          maxLength={30}
+        />
+      </Field>
+
+      <div className="rounded-2xl bg-white/5 border border-white/10 p-5 mb-6 text-center">
+        <div className="text-xs font-extrabold tracking-widest text-white/40 mb-2">FINAL SCORE</div>
+        <div className="text-lg font-bold mb-3">{teamA} {scoreA} — {scoreB} {teamB}</div>
+        <div className="text-emerald-400 font-extrabold text-xl leading-snug">{message}</div>
+      </div>
+
+      <BigButton
+        onClick={copyMessage}
+        className="w-full rounded-2xl bg-white/10 py-6 font-extrabold text-lg mb-3 flex items-center justify-center gap-2"
+      >
+        <Icon name={copied ? 'Check' : 'Copy'} size={22} /> {copied ? 'Copied!' : 'Copy Message'}
+      </BigButton>
+      <BigButton
+        onClick={sendWhatsApp}
+        className="w-full rounded-2xl bg-emerald-400 text-black py-6 font-extrabold text-lg flex items-center justify-center gap-2"
+      >
+        <Icon name="Send" size={22} /> Send to Bentzi (WhatsApp)
+      </BigButton>
+    </Sheet>
+  );
+}
+
+/* ============================== HOME ============================== */
+
+const SPORTS = [
+  { id: 'volleyball', label: 'Volleyball', emoji: '🏐', ring: 'ring-yellow-400/40', glow: 'hover:shadow-yellow-400/20' },
+  { id: 'football', label: 'Football', emoji: '🏈', ring: 'ring-orange-500/40', glow: 'hover:shadow-orange-500/20' },
+  { id: 'soccer', label: 'Soccer', emoji: '⚽', ring: 'ring-emerald-400/40', glow: 'hover:shadow-emerald-400/20' },
+  { id: 'baseball', label: 'Baseball', emoji: '⚾', ring: 'ring-red-500/40', glow: 'hover:shadow-red-500/20' },
+  { id: 'hockey', label: 'Hockey', emoji: '🏒', ring: 'ring-sky-400/40', glow: 'hover:shadow-sky-400/20' },
+  { id: 'basketball', label: 'Basketball', emoji: '🏀', ring: 'ring-amber-500/40', glow: 'hover:shadow-amber-500/20' },
+];
+
+function VibrationTest() {
+  const [result, setResult] = useState(null);
+
+  const test = () => {
+    if (!('vibrate' in navigator)) {
+      setResult('unsupported');
+      return;
+    }
+    const ok = navigator.vibrate(300);
+    setResult(ok ? 'sent' : 'blocked');
+  };
+
+  return (
+    <button
+      onClick={test}
+      className="btn-press mt-4 mx-auto flex items-center gap-2 rounded-full bg-white/5 border border-white/10 px-4 py-2 text-[11px] font-bold text-white/40"
+    >
+      <Icon name="Volume2" size={13} />
+      Test Vibration
+      {result === 'sent' && <span className="text-emerald-400">· sent — feel it?</span>}
+      {result === 'blocked' && <span className="text-red-400">· blocked by browser</span>}
+      {result === 'unsupported' && <span className="text-red-400">· not supported here</span>}
+    </button>
+  );
+}
+
+function AppSettingsSheet({ open, onClose, settings, setSettings }) {
+  return (
+    <Sheet open={open} onClose={onClose} title="App Settings">
+      <Field label="Camp Roster">
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setSettings((s) => ({ ...s, selectedCamp: '' }))}
+            className={`btn-press rounded-xl py-3 px-4 text-sm font-bold ${settings.selectedCamp === '' ? 'bg-white text-black' : 'bg-white/10 text-white/70'}`}
+          >
+            None
+          </button>
+          {Object.entries(CAMP_ROSTERS).map(([key, camp]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setSettings((s) => ({ ...s, selectedCamp: key }))}
+              className={`btn-press rounded-xl py-3 px-4 text-sm font-bold ${settings.selectedCamp === key ? 'bg-white text-black' : 'bg-white/10 text-white/70'}`}
+            >
+              {camp.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-white/30 text-xs mt-2 leading-relaxed">
+          Picking a camp fills team pickers with its roster as suggestions. Leave on "None" to keep the roster empty.
+        </p>
+      </Field>
+
+      <Field label="Sports Director WhatsApp Phone #">
+        <TextInput
+          type="tel"
+          inputMode="tel"
+          value={settings.whatsappPhone}
+          onChange={(e) => setSettings((s) => ({ ...s, whatsappPhone: e.target.value }))}
+          placeholder="e.g. 15551234567 (with country code)"
+          maxLength={20}
+        />
+        <p className="text-white/30 text-xs mt-2 leading-relaxed">
+          Include the country code, digits only (no spaces or dashes). "Send to Bentzi" will message this number directly — leave blank to pick a contact each time.
+        </p>
+      </Field>
+
+      <Field label="Appearance">
+        <Segmented
+          options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }]}
+          value={settings.theme}
+          onChange={(v) => setSettings((s) => ({ ...s, theme: v }))}
+        />
+      </Field>
+
+      <Field label="Football · Default Timeouts">
+        <Stepper
+          value={settings.footballTimeouts}
+          min={1}
+          max={6}
+          onChange={(v) => setSettings((s) => ({ ...s, footballTimeouts: v }))}
+        />
+      </Field>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Volleyball · Sets 1-2">
+          <input
+            type="number"
+            inputMode="numeric"
+            min="1"
+            max="99"
+            value={settings.volleyballRegularTarget}
+            onChange={(e) => {
+              const v = e.target.value;
+              setSettings((s) => ({ ...s, volleyballRegularTarget: v === '' ? '' : Math.max(1, Math.min(99, parseInt(v, 10) || 1)) }));
+            }}
+            className="w-full rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-2xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
+          />
+        </Field>
+        <Field label="Volleyball · Set 3+">
+          <input
+            type="number"
+            inputMode="numeric"
+            min="1"
+            max="99"
+            value={settings.volleyballDecidingTarget}
+            onChange={(e) => {
+              const v = e.target.value;
+              setSettings((s) => ({ ...s, volleyballDecidingTarget: v === '' ? '' : Math.max(1, Math.min(99, parseInt(v, 10) || 1)) }));
+            }}
+            className="w-full rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-2xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
+          />
+        </Field>
+      </div>
+      <p className="text-white/30 text-xs mt-2 mb-5 leading-relaxed">
+        These are the starting defaults for new games — each sport's own settings can still override them for that game.
+      </p>
+
+      <Field label="Volleyball · Tap Server to Score">
+        <Segmented
+          options={[{ value: false, label: 'Off' }, { value: true, label: 'On' }]}
+          value={settings.volleyballTapToScore}
+          onChange={(v) => setSettings((s) => ({ ...s, volleyballTapToScore: v }))}
+        />
+        <p className="text-white/30 text-xs mt-2 leading-relaxed">
+          When on, tapping the team that's already serving adds a point. Tapping the other team still just switches serve (side out) — tap it again once they're serving to score.
+        </p>
+      </Field>
+
+      <Field label="Basketball · Track Fouls">
+        <Segmented
+          options={[{ value: false, label: 'Off' }, { value: true, label: 'On' }]}
+          value={settings.basketballFoulsEnabled}
+          onChange={(v) => setSettings((s) => ({ ...s, basketballFoulsEnabled: v }))}
+        />
+        <p className="text-white/30 text-xs mt-2 leading-relaxed">
+          When on, each Basketball team gets a small foul counter under their scoring buttons.
+        </p>
+      </Field>
+
+      <BigButton onClick={onClose} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg mt-2">
+        Done
+      </BigButton>
+    </Sheet>
+  );
+}
+
+function Home({ onSelect, settings, setSettings }) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  return (
+    <div className="px-5 pt-6 pb-8 max-w-md mx-auto flex flex-col min-h-[100dvh]">
+      <div className="flex items-center justify-between mb-1">
+        <div className="text-3xl font-black tracking-tight">YKP-Refs</div>
+        <LiveClock className="text-white/40 text-sm font-bold tabular" />
+      </div>
+      <div className="text-white/40 text-sm font-semibold mb-7">Camp Sports Referee Toolkit</div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {SPORTS.map((s) => (
+          <button
+            key={s.id}
+            onClick={() => onSelect(s.id)}
+            className={`btn-press aspect-square rounded-3xl bg-zinc-900 ring-1 ${s.ring} flex flex-col items-center justify-center gap-2 shadow-lg ${s.glow}`}
+          >
+            <div className="text-6xl leading-none emoji-safe">{s.emoji}</div>
+            <div className="text-base font-extrabold">{s.label}</div>
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-8 text-center text-white/25 text-xs font-semibold">
+        Tap a sport to start tracking · Set your end time to run the game clock
+      </div>
+      <div className="mt-2 text-center text-white/15 text-[10px] font-bold tracking-widest">
+        v{APP_VERSION}
+      </div>
+      <div className="flex justify-center">
+        <VibrationTest />
+      </div>
+
+      <div className="flex-1" />
+
+      <button
+        onClick={() => setSettingsOpen(true)}
+        className="btn-press w-full mt-6 flex items-center justify-center gap-2 rounded-2xl bg-zinc-900 border border-white/10 py-4 text-white/60 font-bold text-sm"
+      >
+        <Icon name="Settings" size={16} />
+        App Settings
+      </button>
+
+      <AppSettingsSheet
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        settings={settings}
+        setSettings={setSettings}
+      />
+
+      <div className="mt-4 text-center text-white/15 text-[10px] font-semibold">
+        &copy; {new Date().getFullYear()} Yisroel Haskelevich
+      </div>
+    </div>
+  );
+}
+
+/* ============================== VOLLEYBALL ============================== */
+
+const VB_KEY = 'refcourt_volleyball_v1';
+
+function defaultVolleyball() {
+  const s = getAppSettings();
+  return {
+    teamA: '', teamB: '', colorA: null, colorB: null, scoreA: 0, scoreB: 0, serving: 'A', streak: 0,
+    set: 1,
+    liveSet: 1,
+    regularTarget: s.volleyballRegularTarget,
+    decidingTarget: s.volleyballDecidingTarget,
+    setHistory: [],
+    usedPointServeA: false,
+    usedPointServeB: false,
+  };
+}
+
+function volleyballTarget(s) {
+  return s.set >= 3 ? (s.decidingTarget || 11) : (s.regularTarget || 16);
+}
+
+function pointServeEligibility(s) {
+  const target = volleyballTarget(s);
+  const aEligible = s.serving === 'A' && !s.usedPointServeA && (s.scoreA + 1 >= target) && ((s.scoreA + 1) - s.scoreB >= 2);
+  const bEligible = s.serving === 'B' && !s.usedPointServeB && (s.scoreB + 1 >= target) && ((s.scoreB + 1) - s.scoreA >= 2);
+  return { aEligible, bEligible };
+}
+
+function VolleyballSetTracker({ vb, teamADisplay, teamBDisplay, onAdvanceSet, onViewSet }) {
+  const setHistory = vb.setHistory || [];
+  const setsWonA = setHistory.filter((e) => e && e.winner === teamADisplay).length;
+  const setsWonB = setHistory.filter((e) => e && e.winner === teamBDisplay).length;
+  const matchOver = setsWonA >= 2 || setsWonB >= 2;
+  const isLive = vb.set === vb.liveSet;
+
+  return (
+    <div className="rounded-2xl bg-zinc-900 border border-white/10 p-4 landscape:p-2 mb-4 landscape:mb-2 shrink-0">
+      <div className="grid grid-cols-3 gap-2 mb-3 landscape:mb-1.5">
+        {[1, 2, 3].map((n) => {
+          const entry = setHistory[n - 1];
+          const isLiveSlot = vb.liveSet === n;
+          const isViewing = vb.set === n;
+          const reachable = !!entry || isLiveSlot;
+          return (
+            <button
+              key={n}
+              type="button"
+              disabled={!reachable}
+              onClick={() => onViewSet(n)}
+              className={`btn-press rounded-xl py-3 landscape:py-1.5 text-center border ${
+                isViewing ? 'border-emerald-400 bg-emerald-400/10' : 'border-white/10 bg-white/5'
+              } ${!reachable ? 'opacity-30' : ''}`}
+            >
+              <div className="text-[9px] font-bold text-white/40 tracking-widest mb-1">SET {n}</div>
+              {entry ? (
+                <div className="text-xs font-extrabold truncate px-1">{entry.winner || 'Tie'}</div>
+              ) : isLiveSlot ? (
+                <div className="text-xs font-extrabold text-emerald-400">LIVE</div>
+              ) : (
+                <div className="text-xs text-white/20">—</div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-bold text-white/50">
+          {matchOver
+            ? `${setsWonA > setsWonB ? teamADisplay : teamBDisplay} wins the match ${Math.max(setsWonA, setsWonB)}-${Math.min(setsWonA, setsWonB)}`
+            : `Sets · ${teamADisplay} ${setsWonA} – ${setsWonB} ${teamBDisplay}`}
+        </div>
+        {!matchOver && isLive && (
+          <button
+            onClick={onAdvanceSet}
+            className="btn-press shrink-0 rounded-xl bg-white/10 px-3 py-2 text-xs font-bold text-white flex items-center gap-1"
+          >
+            {vb.set < 3 ? 'Next Set' : 'End Set 3'} <Icon name="ChevronRight" size={14} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Volleyball({ globalTimer, onBack }) {
+  const [vb, setVb] = useLocalStorage(VB_KEY, defaultVolleyball());
+  const [appSettings] = useLocalStorage(APP_SETTINGS_KEY, defaultAppSettings());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [endGameOpen, setEndGameOpen] = useState(false);
+
+  const point = () => {
+    setVb((s) => {
+      if (s.set !== s.liveSet) return s;
+      const { aEligible, bEligible } = pointServeEligibility(s);
+      return {
+        ...s,
+        scoreA: s.serving === 'A' ? s.scoreA + 1 : s.scoreA,
+        scoreB: s.serving === 'B' ? s.scoreB + 1 : s.scoreB,
+        streak: s.streak + 1,
+        usedPointServeA: s.usedPointServeA || aEligible,
+        usedPointServeB: s.usedPointServeB || bEligible,
+      };
+    });
+  };
+
+  const sideOut = () => {
+    setVb((s) => {
+      if (s.set !== s.liveSet) return s;
+      const { aEligible, bEligible } = pointServeEligibility(s);
+      return {
+        ...s,
+        serving: s.serving === 'A' ? 'B' : 'A',
+        streak: 0,
+        usedPointServeA: s.usedPointServeA || aEligible,
+        usedPointServeB: s.usedPointServeB || bEligible,
+      };
+    });
+    vibrate(40);
+  };
+
+  const undo = (team) => {
+    setVb((s) => {
+      if (s.set !== s.liveSet) return s;
+      return { ...s, [team === 'A' ? 'scoreA' : 'scoreB']: Math.max(0, (team === 'A' ? s.scoreA : s.scoreB) - 1) };
+    });
+  };
+
+  const advanceSet = () => setVb((s) => {
+    if (s.set !== s.liveSet) return s;
+    // Snapshot everything about this set as it stood right now — team names, colors,
+    // and final score — so navigating back to view it later is correct regardless of
+    // how many more times sides get swapped afterward.
+    const winner = s.scoreA > s.scoreB
+      ? displayTeamName(s.teamA, 'A')
+      : s.scoreB > s.scoreA ? displayTeamName(s.teamB, 'B') : null;
+    const setHistory = [...(s.setHistory || [])];
+    setHistory[s.set - 1] = {
+      winner,
+      teamA: displayTeamName(s.teamA, 'A'),
+      teamB: displayTeamName(s.teamB, 'B'),
+      colorA: s.colorA,
+      colorB: s.colorB,
+      scoreA: s.scoreA,
+      scoreB: s.scoreB,
+    };
+    const nextSet = Math.min(3, s.set + 1);
+    return {
+      ...s,
+      teamA: s.teamB, teamB: s.teamA,
+      colorA: s.colorB, colorB: s.colorA,
+      serving: s.serving === 'A' ? 'B' : 'A',
+      scoreA: 0, scoreB: 0, streak: 0,
+      usedPointServeA: false, usedPointServeB: false,
+      set: nextSet,
+      liveSet: nextSet,
+      setHistory,
+    };
+  });
+
+  const viewSet = (n) => setVb((s) => ({ ...s, set: Math.max(1, Math.min(s.liveSet, n)) }));
+
+  const switchSides = () => setVb((s) => ({
+    ...s,
+    teamA: s.teamB, teamB: s.teamA,
+    colorA: s.colorB, colorB: s.colorA,
+    scoreA: s.scoreB, scoreB: s.scoreA,
+    serving: s.serving === 'A' ? 'B' : 'A',
+  }));
+
+  const setServer = (team) => setVb((s) => ({ ...s, serving: team, streak: 0 }));
+
+  const tapTeam = (team) => {
+    if (vb.set !== vb.liveSet) return;
+    if (appSettings.volleyballTapToScore && vb.serving === team) {
+      point();
+    } else {
+      setServer(team);
+    }
+  };
+
+  const isLive = vb.set === vb.liveSet;
+  const historyEntry = (vb.setHistory || [])[vb.set - 1];
+
+  const teamADisplay = displayTeamName(vb.teamA, 'A');
+  const teamBDisplay = displayTeamName(vb.teamB, 'B');
+
+  const viewScoreA = isLive ? vb.scoreA : (historyEntry ? historyEntry.scoreA : 0);
+  const viewScoreB = isLive ? vb.scoreB : (historyEntry ? historyEntry.scoreB : 0);
+  const viewTeamAName = isLive ? teamADisplay : (historyEntry ? historyEntry.teamA : teamADisplay);
+  const viewTeamBName = isLive ? teamBDisplay : (historyEntry ? historyEntry.teamB : teamBDisplay);
+  const viewColorA = isLive ? vb.colorA : (historyEntry ? historyEntry.colorA : vb.colorA);
+  const viewColorB = isLive ? vb.colorB : (historyEntry ? historyEntry.colorB : vb.colorB);
+
+  const spTarget = volleyballTarget(vb);
+  const setDoneA = isLive && vb.scoreA >= spTarget && (vb.scoreA - vb.scoreB) >= 2;
+  const setDoneB = isLive && vb.scoreB >= spTarget && (vb.scoreB - vb.scoreA) >= 2;
+  const setWinnerName = setDoneA ? teamADisplay : setDoneB ? teamBDisplay : null;
+
+  const { aEligible, bEligible } = pointServeEligibility(vb);
+  const pointServeActive = isLive && !setWinnerName && (aEligible || bEligible);
+  const winByTwo = Math.min(vb.scoreA, vb.scoreB) >= spTarget - 1;
+  const serverName = displayTeamName(vb.serving === 'A' ? vb.teamA : vb.teamB, vb.serving);
+  const bannerText = pointServeActive ? `${serverName} POINT SERVE${winByTwo ? ' (WIN BY 2)' : ''}` : null;
+
+  const setPointRef = useRef(false);
+  useEffect(() => {
+    if (pointServeActive && !setPointRef.current) vibrate(40);
+    setPointRef.current = pointServeActive;
+  }, [pointServeActive]);
+
+  const setWinRef = useRef(false);
+  useEffect(() => {
+    if (setWinnerName && !setWinRef.current) vibrate([50, 50, 50, 50, 100]);
+    setWinRef.current = !!setWinnerName;
+  }, [setWinnerName]);
+
+  const setHistoryList = vb.setHistory || [];
+  const setsWonA = setHistoryList.filter((e) => e && e.winner === teamADisplay).length;
+  const setsWonB = setHistoryList.filter((e) => e && e.winner === teamBDisplay).length;
+  let matchWinnerOverride;
+  if (setsWonA >= 2 || setsWonB >= 2 || setsWonA !== setsWonB) {
+    matchWinnerOverride = setsWonA > setsWonB ? teamADisplay : teamBDisplay;
+  }
+
+  return (
+    <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:h-dvh landscape:min-h-0">
+      <EndGamePill onClick={() => setEndGameOpen(true)} />
+      <Header title="Volleyball" onBack={onBack} onSettings={() => setSettingsOpen(true)} />
+
+      <VolleyballSetTracker vb={vb} teamADisplay={teamADisplay} teamBDisplay={teamBDisplay} onAdvanceSet={advanceSet} onViewSet={viewSet} />
+
+      <div className="flex items-center justify-end mb-2 landscape:mb-1 px-1 shrink-0">
+        <div className="text-white/40 text-xs font-extrabold tracking-widest">STREAK {vb.streak}</div>
+      </div>
+
+      {setWinnerName ? (
+        <div className="mb-3 landscape:mb-1.5 rounded-2xl bg-emerald-400 text-black text-center py-2.5 landscape:py-1.5 font-extrabold text-sm tracking-widest animate-pulse-fast shrink-0">
+          {setWinnerName.toUpperCase()} WINS THE SET
+        </div>
+      ) : bannerText && (
+        <div className="mb-3 landscape:mb-1.5 rounded-2xl bg-yellow-400 text-black text-center py-2.5 landscape:py-1.5 font-extrabold text-sm tracking-widest animate-pulse-fast shrink-0">
+          {bannerText}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 landscape:gap-2 mb-4 landscape:mb-2 flex-1 landscape:min-h-0">
+        {['A', 'B'].map((team) => {
+          const serving = isLive && vb.serving === team;
+          const name = team === 'A' ? viewTeamAName : viewTeamBName;
+          const score = team === 'A' ? viewScoreA : viewScoreB;
+          const color = team === 'A' ? viewColorA : viewColorB;
+          const c = teamColorClasses(color);
+          return (
+            <button
+              key={team}
+              onClick={() => tapTeam(team)}
+              className={`btn-press rounded-3xl flex flex-col items-center justify-center py-8 landscape:py-2 gap-2 landscape:gap-1 transition-colors ${c.bg} ${
+                serving ? 'border-4 border-emerald-400 ring-4 ring-emerald-400/40' : `border-2 ${c.border}`
+              }`}
+            >
+              {serving && (
+                <div className="flex items-center gap-1 text-emerald-400 text-xs font-extrabold tracking-widest mb-1 landscape:mb-0">
+                  <Icon name="CircleDot" size={12} /> SERVING
+                </div>
+              )}
+              <div className={`text-lg landscape:text-sm font-bold ${c.text} opacity-70 truncate max-w-full px-2`}>{name}</div>
+              <div className={`text-7xl landscape:text-5xl font-black tabular ${c.text}`}>{score}</div>
+              {isLive && (
+                <div
+                  role="button"
+                  onClick={(e) => { e.stopPropagation(); undo(team); }}
+                  className={`btn-press mt-2 landscape:mt-1 w-10 h-10 landscape:w-8 landscape:h-8 rounded-full ${c.overlay} ${c.text} flex items-center justify-center`}
+                >
+                  <Icon name="Minus" size={16} />
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {isLive ? (
+        <div className="grid grid-cols-2 gap-3 landscape:gap-2 shrink-0">
+          <BigButton onClick={sideOut} className="rounded-3xl bg-red-500/15 border-2 border-red-500 py-7 landscape:py-3 text-red-400 font-extrabold text-xl landscape:text-base flex flex-col landscape:flex-row items-center gap-1 landscape:gap-2 justify-center">
+            <Icon name="ArrowLeftRight" size={26} />
+            Side Out
+          </BigButton>
+          <BigButton onClick={point} className="rounded-3xl bg-emerald-400 py-7 landscape:py-3 text-black font-extrabold text-xl landscape:text-base flex flex-col landscape:flex-row items-center gap-1 landscape:gap-2 justify-center">
+            <Icon name="Plus" size={26} />
+            Point
+          </BigButton>
+        </div>
+      ) : (
+        <BigButton
+          onClick={() => viewSet(vb.liveSet)}
+          className="rounded-3xl bg-white/10 border-2 border-white/20 py-6 landscape:py-3 text-white font-extrabold text-base flex items-center justify-center gap-2 shrink-0"
+        >
+          <Icon name="ArrowLeft" size={18} />
+          Viewing Set {vb.set} (Final) · Tap to Return to Live Set
+        </BigButton>
+      )}
+
+      <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Volleyball Settings">
+        <TeamPicker
+          label="Team A"
+          teamName={vb.teamA}
+          teamColor={vb.colorA}
+          onSelect={(t) => setVb((s) => ({ ...s, teamA: t.label, colorA: t.color }))}
+          onCustomName={(v) => setVb((s) => ({ ...s, teamA: v }))}
+          onCustomColor={(c) => setVb((s) => ({ ...s, colorA: c }))}
+        />
+        <TeamPicker
+          label="Team B"
+          teamName={vb.teamB}
+          teamColor={vb.colorB}
+          onSelect={(t) => setVb((s) => ({ ...s, teamB: t.label, colorB: t.color }))}
+          onCustomName={(v) => setVb((s) => ({ ...s, teamB: v }))}
+          onCustomColor={(c) => setVb((s) => ({ ...s, colorB: c }))}
+        />
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Sets 1-2 Target">
+            <input
+              type="number"
+              inputMode="numeric"
+              min="1"
+              max="99"
+              value={vb.regularTarget ?? 16}
+              onChange={(e) => {
+                const v = e.target.value;
+                setVb((s) => ({ ...s, regularTarget: v === '' ? '' : Math.max(1, Math.min(99, parseInt(v, 10) || 1)) }));
+              }}
+              className="w-full rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-2xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
+            />
+          </Field>
+          <Field label="Set 3+ Target">
+            <input
+              type="number"
+              inputMode="numeric"
+              min="1"
+              max="99"
+              value={vb.decidingTarget ?? 11}
+              onChange={(e) => {
+                const v = e.target.value;
+                setVb((s) => ({ ...s, decidingTarget: v === '' ? '' : Math.max(1, Math.min(99, parseInt(v, 10) || 1)) }));
+              }}
+              className="w-full rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-2xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
+            />
+          </Field>
+        </div>
+        <p className="text-white/30 text-xs mt-2 mb-3 leading-relaxed">
+          We'll flag "Point Serve" when the serving team can win the set on this serve (once per team per set) — adding "(Win By 2)" once both teams are close enough that the win-by-two rule is in play, so it's clear that's what's needed, not a claim they're already 2 ahead. Use "Next Set" at the top of the screen to end a set — sides switch automatically.
+        </p>
+        <BigButton onClick={switchSides} className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white mb-3 flex items-center justify-center gap-2">
+          <Icon name="ArrowLeftRight" size={18} /> Switch Sides
+        </BigButton>
+        <BigButton
+          onClick={() => setVb(defaultVolleyball())}
+          className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mb-3"
+        >
+          Reset Match
+        </BigButton>
+        <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
+          Done
+        </BigButton>
+      </Sheet>
+
+      <EndGameSheet
+        open={endGameOpen}
+        onClose={() => setEndGameOpen(false)}
+        sportLabel="Volleyball"
+        teamA={vb.teamA}
+        teamB={vb.teamB}
+        scoreA={vb.scoreA}
+        scoreB={vb.scoreB}
+        globalTimer={globalTimer}
+        winnerOverride={matchWinnerOverride}
+      />
+    </div>
+  );
+}
+
+/* ============================== FOOTBALL ============================== */
+
+const FB_KEY = 'refcourt_football_v1';
+
+function defaultFootball() {
+  const to = getAppSettings().footballTimeouts;
+  return {
+    teamA: '', teamB: '', scoreA: 0, scoreB: 0,
+    colorA: null, colorB: null,
+    timeoutMode: 'half', timeoutCount: to,
+    timeoutsA: to, timeoutsB: to,
+    half: 1,
+  };
+}
+
+function Football({ globalTimer, onBack }) {
+  const [fb, setFb] = useLocalStorage(FB_KEY, defaultFootball());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [endGameOpen, setEndGameOpen] = useState(false);
+
+  const addPoint = (team) => {
+    setFb((s) => ({ ...s, [team === 'A' ? 'scoreA' : 'scoreB']: (team === 'A' ? s.scoreA : s.scoreB) + 1 }));
+    vibrate(30);
+  };
+
+  const undo = (team) => {
+    setFb((s) => ({ ...s, [team === 'A' ? 'scoreA' : 'scoreB']: Math.max(0, (team === 'A' ? s.scoreA : s.scoreB) - 1) }));
+  };
+
+  const useTimeout = (team) => {
+    setFb((s) => {
+      const key = team === 'A' ? 'timeoutsA' : 'timeoutsB';
+      if (s[key] <= 0) return s;
+      vibrate(50);
+      return { ...s, [key]: s[key] - 1 };
+    });
+  };
+
+  const restoreTimeout = (team) => {
+    setFb((s) => {
+      const key = team === 'A' ? 'timeoutsA' : 'timeoutsB';
+      if (s[key] >= s.timeoutCount) return s;
+      return { ...s, [key]: s[key] + 1 };
+    });
+  };
+
+  const changeHalf = (delta) => {
+    setFb((s) => {
+      const half = Math.max(1, s.half + delta);
+      if (delta > 0 && s.timeoutMode === 'half') {
+        return { ...s, half, timeoutsA: s.timeoutCount, timeoutsB: s.timeoutCount };
+      }
+      return { ...s, half };
+    });
+  };
+
+  const TimeoutFooter = ({ team }) => {
+    const remaining = team === 'A' ? fb.timeoutsA : fb.timeoutsB;
+    const color = team === 'A' ? fb.colorA : fb.colorB;
+    const c = teamColorClasses(color);
+    const light = c.text === 'text-black';
+    const dotFill = light ? 'bg-black border-black' : 'bg-white border-white';
+    const dotEmpty = light ? 'border-black/30' : 'border-white/30';
+    return (
+      <div className="w-full mt-1 landscape:mt-0.5 px-1 flex justify-start">
+        <div className="flex items-center gap-0.5 rounded-2xl bg-black/20 pl-2.5 pr-1 py-1 landscape:py-0.5">
+          <span className={`text-[9px] font-bold ${c.sub} tracking-widest mr-1`}>TO</span>
+          {Array.from({ length: fb.timeoutCount }).map((_, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); i < remaining ? useTimeout(team) : restoreTimeout(team); }}
+              className="btn-press flex items-center justify-center w-8 h-8 landscape:w-6 landscape:h-6 shrink-0"
+            >
+              <span className={`block w-4 h-4 landscape:w-3 landscape:h-3 rounded-full border ${i < remaining ? dotFill : `${dotEmpty} bg-transparent`}`} />
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:h-dvh landscape:min-h-0">
+      <EndGamePill onClick={() => setEndGameOpen(true)} />
+      <Header title="Football" onBack={onBack} onSettings={() => setSettingsOpen(true)} />
+      <TimerBar globalTimer={globalTimer} />
+
+      <div className="flex flex-col landscape:flex-row gap-3 landscape:gap-2 flex-1 mb-4 landscape:mb-2 landscape:min-h-0" style={{ minHeight: '48vh' }}>
+        <ScoreHalf
+          name={displayTeamName(fb.teamA, 'A')}
+          score={fb.scoreA}
+          onScore={() => addPoint('A')}
+          onUndo={() => undo('A')}
+          scoreClassName="text-7xl"
+          footer={<TimeoutFooter team="A" />}
+          color={fb.colorA}
+        />
+        <ScoreHalf
+          name={displayTeamName(fb.teamB, 'B')}
+          score={fb.scoreB}
+          onScore={() => addPoint('B')}
+          onUndo={() => undo('B')}
+          scoreClassName="text-7xl"
+          footer={<TimeoutFooter team="B" />}
+          color={fb.colorB}
+        />
+      </div>
+
+      <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 landscape:py-2 px-5 flex items-center justify-between shrink-0">
+        <IconButton name="ChevronLeft" onClick={() => changeHalf(-1)} label="Previous half" />
+        <div className="text-center">
+          <div className="text-xs font-extrabold tracking-widest text-white/40">HALF</div>
+          <div className="text-3xl landscape:text-xl font-black tabular">
+            {fb.half}
+            <span className="text-white/30 text-lg">/2</span>
+          </div>
+        </div>
+        <IconButton name="ChevronRight" onClick={() => changeHalf(1)} label="Next half" />
+      </div>
+
+      <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Football Settings">
+        <TeamPicker
+          label="Team A"
+          teamName={fb.teamA}
+          teamColor={fb.colorA}
+          onSelect={(t) => setFb((s) => ({ ...s, teamA: t.label, colorA: t.color }))}
+          onCustomName={(v) => setFb((s) => ({ ...s, teamA: v }))}
+          onCustomColor={(c) => setFb((s) => ({ ...s, colorA: c }))}
+        />
+        <TeamPicker
+          label="Team B"
+          teamName={fb.teamB}
+          teamColor={fb.colorB}
+          onSelect={(t) => setFb((s) => ({ ...s, teamB: t.label, colorB: t.color }))}
+          onCustomName={(v) => setFb((s) => ({ ...s, teamB: v }))}
+          onCustomColor={(c) => setFb((s) => ({ ...s, colorB: c }))}
+        />
+        <Field label="Timeouts Reset">
+          <Segmented
+            options={[{ value: 'half', label: 'Per Half' }, { value: 'game', label: 'Per Game' }]}
+            value={fb.timeoutMode}
+            onChange={(v) => setFb((s) => ({ ...s, timeoutMode: v }))}
+          />
+        </Field>
+        <Field label="Timeouts per team">
+          <Stepper
+            value={fb.timeoutCount}
+            min={1}
+            max={6}
+            onChange={(v) => setFb((s) => ({ ...s, timeoutCount: v, timeoutsA: v, timeoutsB: v }))}
+          />
+        </Field>
+        <BigButton
+          onClick={() => setFb(defaultFootball())}
+          className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2 mb-3"
+        >
+          Reset Game
+        </BigButton>
+        <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
+          Done
+        </BigButton>
+      </Sheet>
+
+      <EndGameSheet
+        open={endGameOpen}
+        onClose={() => setEndGameOpen(false)}
+        sportLabel="Football"
+        teamA={fb.teamA}
+        teamB={fb.teamB}
+        scoreA={fb.scoreA}
+        scoreB={fb.scoreB}
+        globalTimer={globalTimer}
+      />
+    </div>
+  );
+}
+
+/* ============================== UNIVERSAL TRACKER ============================== */
+
+const UNIVERSAL_CONFIG = {
+  soccer: { title: 'Soccer', unit: 'Half', maxUnit: 2, icon: '⚽', accent: 'emerald-400' },
+  hockey: { title: 'Hockey', unit: 'Period', maxUnit: 3, icon: '🏒', accent: 'sky-400' },
+  baseball: { title: 'Baseball', unit: 'Inning', maxUnit: 9, icon: '⚾', accent: 'red-400' },
+};
+
+function defaultUniversal() {
+  return { teamA: '', teamB: '', scoreA: 0, scoreB: 0, colorA: null, colorB: null, period: 1, half: 'Top', topTeam: 'A', balls: 0, strikes: 0, outs: 0 };
+}
+
+const AT_BAT_BANNER_STYLES = {
+  'WALK!': 'bg-emerald-400 text-black',
+  'STRIKE OUT!': 'bg-yellow-400 text-black',
+  'SIDE RETIRED!': 'bg-red-500 text-white',
+};
+
+function advanceHalfInning(s) {
+  if (s.half === 'Top') return { ...s, half: 'Bottom' };
+  return { ...s, half: 'Top', period: s.period + 1 };
+}
+
+function Universal({ sport, globalTimer, onBack }) {
+  const cfg = UNIVERSAL_CONFIG[sport];
+  const key = `refcourt_${sport}_v1`;
+  const [g, setG] = useLocalStorage(key, defaultUniversal());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [endGameOpen, setEndGameOpen] = useState(false);
+
+  const addPoint = (team) => {
+    setG((s) => ({ ...s, [team === 'A' ? 'scoreA' : 'scoreB']: (team === 'A' ? s.scoreA : s.scoreB) + 1 }));
+    vibrate(30);
+  };
+  const undo = (team) => {
+    setG((s) => ({ ...s, [team === 'A' ? 'scoreA' : 'scoreB']: Math.max(0, (team === 'A' ? s.scoreA : s.scoreB) - 1) }));
+  };
+
+  const changePeriod = (delta) => {
+    setG((s) => {
+      const next = s.period + delta;
+      const clamped = sport === 'soccer' ? Math.min(cfg.maxUnit, Math.max(1, next)) : Math.max(1, next);
+      return { ...s, period: clamped };
+    });
+  };
+
+  const toggleHalf = () => setG((s) => ({ ...s, half: s.half === 'Top' ? 'Bottom' : 'Top' }));
+  const swapTopBottom = () => setG((s) => ({ ...s, topTeam: s.topTeam === 'A' ? 'B' : 'A' }));
+
+  const topTeam = g.topTeam || 'A';
+  const battingTeam = g.half === 'Top' ? topTeam : (topTeam === 'A' ? 'B' : 'A');
+  const battingTeamName = displayTeamName(battingTeam === 'A' ? g.teamA : g.teamB, battingTeam);
+
+  const [bannerQueue, setBannerQueue] = useState([]);
+  const [banner, setBanner] = useState(null);
+  const pushBanner = (text) => setBannerQueue((q) => [...q, text]);
+
+  useEffect(() => {
+    if (!banner && bannerQueue.length > 0) {
+      setBanner(bannerQueue[0]);
+      setBannerQueue((q) => q.slice(1));
+    }
+  }, [banner, bannerQueue]);
+
+  useEffect(() => {
+    if (!banner) return;
+    const t = setTimeout(() => setBanner(null), 1500);
+    return () => clearTimeout(t);
+  }, [banner]);
+
+  const addBall = () => {
+    vibrate(20);
+    setG((s) => {
+      const balls = (s.balls || 0) + 1;
+      if (balls >= 4) {
+        pushBanner('WALK!');
+        return { ...s, balls: 0, strikes: 0 };
+      }
+      return { ...s, balls };
+    });
+  };
+
+  const addStrike = () => {
+    vibrate(20);
+    setG((s) => {
+      const strikes = (s.strikes || 0) + 1;
+      if (strikes >= 3) {
+        pushBanner('STRIKE OUT!');
+        const outs = (s.outs || 0) + 1;
+        if (outs >= 3) {
+          pushBanner('SIDE RETIRED!');
+          return advanceHalfInning({ ...s, balls: 0, strikes: 0, outs: 0 });
+        }
+        return { ...s, balls: 0, strikes: 0, outs };
+      }
+      return { ...s, strikes };
+    });
+  };
+
+  const addOut = () => {
+    vibrate(20);
+    setG((s) => {
+      const outs = (s.outs || 0) + 1;
+      if (outs >= 3) {
+        pushBanner('SIDE RETIRED!');
+        return advanceHalfInning({ ...s, balls: 0, strikes: 0, outs: 0 });
+      }
+      return { ...s, balls: 0, strikes: 0, outs };
+    });
+  };
+
+  const resetCount = () => setG((s) => ({ ...s, balls: 0, strikes: 0 }));
+
+  return (
+    <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:h-dvh landscape:min-h-0">
+      {banner && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 pointer-events-none">
+          <div className={`pop-in rounded-3xl px-10 landscape:px-6 py-8 landscape:py-4 text-4xl landscape:text-2xl font-black tracking-wide text-center shadow-2xl ${AT_BAT_BANNER_STYLES[banner] || 'bg-white text-black'}`}>
+            {banner}
+          </div>
+        </div>
+      )}
+      <EndGamePill onClick={() => setEndGameOpen(true)} />
+      <Header title={cfg.title} onBack={onBack} onSettings={() => setSettingsOpen(true)} />
+      {sport !== 'baseball' && <TimerBar globalTimer={globalTimer} />}
+
+      <div className="flex flex-col landscape:flex-row gap-3 landscape:gap-2 flex-1 mb-4 landscape:mb-2 landscape:min-h-0" style={{ minHeight: '48vh' }}>
+        <ScoreHalf
+          name={displayTeamName(g.teamA, 'A')}
+          score={g.scoreA}
+          onScore={() => addPoint('A')}
+          onUndo={() => undo('A')}
+          color={g.colorA}
+          locked={sport === 'baseball' && battingTeam !== 'A'}
+        />
+        <ScoreHalf
+          name={displayTeamName(g.teamB, 'B')}
+          score={g.scoreB}
+          onScore={() => addPoint('B')}
+          onUndo={() => undo('B')}
+          color={g.colorB}
+          locked={sport === 'baseball' && battingTeam !== 'B'}
+        />
+      </div>
+
+      <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 landscape:py-2 px-5 flex items-center justify-between shrink-0">
+        <IconButton name="ChevronLeft" onClick={() => changePeriod(-1)} label="Previous period" />
+        <div className="text-center">
+          <div className="text-xs font-extrabold tracking-widest text-white/40">{cfg.unit.toUpperCase()}</div>
+          <div className="text-3xl landscape:text-xl font-black tabular">
+            {g.period}
+            <span className="text-white/30 text-lg">/{cfg.maxUnit}</span>
+          </div>
+        </div>
+        <IconButton name="ChevronRight" onClick={() => changePeriod(1)} label="Next period" />
+      </div>
+
+      {sport === 'baseball' && (
+        <button
+          onClick={toggleHalf}
+          className="btn-press w-full mt-3 landscape:mt-1.5 rounded-2xl bg-zinc-900 border-2 border-white/10 py-5 landscape:py-2 px-5 flex items-center justify-center gap-2 active:bg-white/10 shrink-0"
+        >
+          <Icon name="ArrowLeftRight" size={20} className="text-white/40" />
+          <span className="text-lg landscape:text-sm font-extrabold tracking-wide">
+            {g.half.toUpperCase()} &middot; {battingTeamName} BATTING
+          </span>
+        </button>
+      )}
+
+      {sport === 'baseball' && (
+        <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 landscape:py-2 px-4 mt-3 landscape:mt-1.5 shrink-0">
+          <div className="grid grid-cols-3 gap-2 mb-4 landscape:mb-2">
+            {[
+              { key: 'balls', label: 'BALLS (B)', count: g.balls || 0, max: 4, dot: 'bg-emerald-400 border-emerald-400' },
+              { key: 'strikes', label: 'STRIKES (S)', count: g.strikes || 0, max: 3, dot: 'bg-yellow-400 border-yellow-400' },
+              { key: 'outs', label: 'OUTS (O)', count: g.outs || 0, max: 3, dot: 'bg-red-500 border-red-500' },
+            ].map((c) => (
+              <div key={c.key} className="flex flex-col items-center gap-2 landscape:gap-1">
+                <div className="text-[9px] font-extrabold tracking-widest text-white/40 text-center">{c.label}</div>
+                <div className="flex gap-1.5 landscape:gap-1">
+                  {Array.from({ length: c.max }).map((_, i) => (
+                    <div key={i} className={`w-4 h-4 landscape:w-3 landscape:h-3 rounded-full border-2 ${i < c.count ? c.dot : 'border-white/25 bg-transparent'}`} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 mb-2 landscape:mb-1.5">
+            <BigButton onClick={addBall} className="rounded-2xl bg-emerald-400/15 border-2 border-emerald-400/40 text-emerald-400 py-5 landscape:py-2.5 font-extrabold text-sm">
+              +BALL
+            </BigButton>
+            <BigButton onClick={addStrike} className="rounded-2xl bg-yellow-400/15 border-2 border-yellow-400/40 text-yellow-400 py-5 landscape:py-2.5 font-extrabold text-sm">
+              +STRIKE
+            </BigButton>
+            <BigButton onClick={addOut} className="rounded-2xl bg-red-500/15 border-2 border-red-500/40 text-red-400 py-5 landscape:py-2.5 font-extrabold text-sm">
+              +OUT
+            </BigButton>
+          </div>
+
+          <BigButton
+            onClick={resetCount}
+            className="w-full rounded-xl bg-white/5 border border-white/10 py-2.5 landscape:py-1.5 text-white/40 font-bold text-xs flex items-center justify-center gap-1.5"
+          >
+            <Icon name="RotateCcw" size={12} /> RESET COUNT
+          </BigButton>
+        </div>
+      )}
+
+      <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title={`${cfg.title} Settings`}>
+        <TeamPicker
+          label="Team A"
+          teamName={g.teamA}
+          teamColor={g.colorA}
+          onSelect={(t) => setG((s) => ({ ...s, teamA: t.label, colorA: t.color }))}
+          onCustomName={(v) => setG((s) => ({ ...s, teamA: v }))}
+          onCustomColor={(c) => setG((s) => ({ ...s, colorA: c }))}
+        />
+        <TeamPicker
+          label="Team B"
+          teamName={g.teamB}
+          teamColor={g.colorB}
+          onSelect={(t) => setG((s) => ({ ...s, teamB: t.label, colorB: t.color }))}
+          onCustomName={(v) => setG((s) => ({ ...s, teamB: v }))}
+          onCustomColor={(c) => setG((s) => ({ ...s, colorB: c }))}
+        />
+        {sport === 'baseball' && (
+          <BigButton
+            onClick={swapTopBottom}
+            className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white mt-2 mb-3 flex items-center justify-center gap-2"
+          >
+            <Icon name="ArrowLeftRight" size={18} /> Swap Top/Bottom Teams
+          </BigButton>
+        )}
+        <BigButton
+          onClick={() => setG(defaultUniversal())}
+          className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2 mb-3"
+        >
+          Reset Game
+        </BigButton>
+        <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
+          Done
+        </BigButton>
+      </Sheet>
+
+      <EndGameSheet
+        open={endGameOpen}
+        onClose={() => setEndGameOpen(false)}
+        sportLabel={cfg.title}
+        teamA={g.teamA}
+        teamB={g.teamB}
+        scoreA={g.scoreA}
+        scoreB={g.scoreB}
+        globalTimer={globalTimer}
+      />
+    </div>
+  );
+}
+
+/* ============================== BASKETBALL ============================== */
+
+const BK_KEY = 'refcourt_basketball_v1';
+
+function defaultBasketball() {
+  return { teamA: '', teamB: '', scoreA: 0, scoreB: 0, colorA: null, colorB: null, half: 1, periodMode: 'halves', history: [], foulsA: 0, foulsB: 0 };
+}
+
+function basketballPeriodLabel(bk) {
+  const quarters = ['1st', '2nd', '3rd', '4th'];
+  const halves = ['1st Half', '2nd Half'];
+  if (bk.periodMode === 'quarters') {
+    return `${quarters[bk.half - 1] || bk.half + 'th'} Quarter`;
+  }
+  return halves[bk.half - 1] || `Half ${bk.half}`;
+}
+
+function HistoryLogRow({ h, hc, hname, whenLabel, onDismiss }) {
+  const [dx, setDx] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const stateRef = useRef(null);
+
+  const onPointerDown = (e) => {
+    stateRef.current = { startX: e.clientX, startY: e.clientY, axis: null };
+  };
+  const onPointerMove = (e) => {
+    const st = stateRef.current;
+    if (!st) return;
+    const ddx = e.clientX - st.startX;
+    const ddy = e.clientY - st.startY;
+    if (!st.axis) {
+      if (Math.abs(ddx) < 8 && Math.abs(ddy) < 8) return;
+      st.axis = Math.abs(ddx) > Math.abs(ddy) ? 'x' : 'y';
+      if (st.axis === 'x') {
+        setDragging(true);
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+    }
+    if (st.axis !== 'x') return;
+    e.stopPropagation();
+    setDx(ddx);
+  };
+  const onPointerUp = (e) => {
+    const st = stateRef.current;
+    stateRef.current = null;
+    if (st && st.axis === 'x') {
+      e.stopPropagation();
+      if (Math.abs(dx) > 70) {
+        setDragging(false);
+        setDx(dx > 0 ? 600 : -600);
+        setTimeout(onDismiss, 180);
+        return;
+      }
+    }
+    setDragging(false);
+    setDx(0);
+  };
+
+  return (
+    <div
+      className="relative mb-1 last:mb-0 touch-pan-y"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+    >
+      <div
+        className={`flex items-center gap-2 py-2 px-2 rounded-lg border-l-4 ${hc.border} ${hc.bg}/15 bg-zinc-900`}
+        style={{
+          transform: `translateX(${dx}px)`,
+          opacity: Math.max(0, 1 - Math.abs(dx) / 140),
+          transition: dragging ? 'none' : 'transform 0.18s ease, opacity 0.18s ease',
+        }}
+      >
+        <span className={`w-3 h-3 rounded-full shrink-0 ${hc.bg} border border-white/20`} />
+        <span className="text-xs font-semibold flex-1 truncate">{hname}</span>
+        <span className="text-xs font-extrabold">+{h.pts}</span>
+        <span className="text-[10px] text-white/40 tabular shrink-0">{whenLabel}</span>
+      </div>
+    </div>
+  );
+}
+
+function BasketballHistoryPanel({ open, onClose, history, bk, onDismissEntry }) {
+  const [dragY, setDragY] = useState(0);
+  const draggingRef = useRef(false);
+  const startYRef = useRef(0);
+
+  if (!open) return null;
+
+  const onPointerDown = (e) => {
+    draggingRef.current = true;
+    startYRef.current = e.clientY;
+  };
+  const onPointerMove = (e) => {
+    if (!draggingRef.current) return;
+    setDragY(Math.min(0, e.clientY - startYRef.current));
+  };
+  const endDrag = () => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    if (dragY < -36) onClose();
+    setDragY(0);
+  };
+
+  return (
+    <div className="fixed inset-x-0 top-20 z-50 flex justify-center px-5 pointer-events-none">
+      <div
+        className="pop-in pointer-events-auto w-full max-w-sm rounded-2xl bg-zinc-900 border border-white/20 shadow-2xl p-3"
+        style={{ transform: `translateY(${dragY}px)`, transition: draggingRef.current ? 'none' : 'transform 0.2s ease' }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+      >
+        <div className="mx-auto mb-2 h-1.5 w-10 rounded-full bg-white/20" />
+        <div className="flex items-center justify-between mb-2 px-1">
+          <div className="text-[10px] font-extrabold tracking-widest text-white/40">RECENT SCORING</div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close history"
+            className="btn-press w-6 h-6 rounded-full bg-white/10 active:bg-white/20 flex items-center justify-center text-white/50 shrink-0"
+          >
+            <Icon name="X" size={12} />
+          </button>
+        </div>
+        {history.length === 0 ? (
+          <div className="text-white/30 text-xs px-1 py-2">No scores yet</div>
+        ) : (
+          [...history].slice(-5).reverse().map((h, i) => {
+            const hc = teamColorClasses(h.team === 'A' ? bk.colorA : bk.colorB);
+            const hname = displayTeamName(h.team === 'A' ? bk.teamA : bk.teamB, h.team);
+            const whenLabel = h.clockLabel ? `${h.clockLabel} · ${h.periodLabel}` : (h.periodLabel || '—');
+            return (
+              <HistoryLogRow
+                key={i}
+                h={h}
+                hc={hc}
+                hname={hname}
+                whenLabel={whenLabel}
+                onDismiss={() => onDismissEntry(h)}
+              />
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Basketball({ globalTimer, onBack }) {
+  const [bk, setBk] = useLocalStorage(BK_KEY, defaultBasketball());
+  const [appSettings] = useLocalStorage(APP_SETTINGS_KEY, defaultAppSettings());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [endGameOpen, setEndGameOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  useEffect(() => {
+    if (!historyOpen) return;
+    const t = setTimeout(() => setHistoryOpen(false), 6000);
+    return () => clearTimeout(t);
+  }, [historyOpen]);
+
+  const addScore = (team, pts) => {
+    const periodLabel = basketballPeriodLabel(bk);
+    const clockLabel = globalTimer && globalTimer.timer.configured && !globalTimer.timer.finished
+      ? formatClock(globalTimer.remainingMs / 1000)
+      : null;
+    setBk((s) => ({
+      ...s,
+      [team === 'A' ? 'scoreA' : 'scoreB']: (team === 'A' ? s.scoreA : s.scoreB) + pts,
+      history: [...s.history, { team, pts, clockLabel, periodLabel }].slice(-30),
+    }));
+    vibrate(30);
+  };
+
+  const adjustFouls = (team, delta) => {
+    setBk((s) => ({ ...s, [team === 'A' ? 'foulsA' : 'foulsB']: Math.max(0, (team === 'A' ? s.foulsA : s.foulsB) + delta) }));
+  };
+
+  const undoLast = () => {
+    setBk((s) => {
+      if (s.history.length === 0) return s;
+      const last = s.history[s.history.length - 1];
+      return {
+        ...s,
+        [last.team === 'A' ? 'scoreA' : 'scoreB']: Math.max(0, (last.team === 'A' ? s.scoreA : s.scoreB) - last.pts),
+        history: s.history.slice(0, -1),
+      };
+    });
+  };
+
+  const dismissHistoryEntry = (entry) => {
+    setBk((s) => ({ ...s, history: s.history.filter((e) => e !== entry) }));
+  };
+
+  const setHalf = (half) => setBk((s) => ({ ...s, half }));
+
+  const undo = (team) => {
+    setBk((s) => ({ ...s, [team === 'A' ? 'scoreA' : 'scoreB']: Math.max(0, (team === 'A' ? s.scoreA : s.scoreB) - 1) }));
+  };
+
+  const lastAction = bk.history[bk.history.length - 1];
+
+  const TeamSide = ({ team }) => {
+    const name = displayTeamName(team === 'A' ? bk.teamA : bk.teamB, team);
+    const score = team === 'A' ? bk.scoreA : bk.scoreB;
+    const color = team === 'A' ? bk.colorA : bk.colorB;
+    const c = teamColorClasses(color);
+    return (
+      <div className={`relative flex-1 rounded-3xl ${c.bg} border-2 ${c.border} flex flex-col items-center justify-center gap-3 landscape:gap-1.5 py-4 landscape:py-2 px-3 landscape:h-full landscape:min-h-0`}>
+        <div
+          role="button"
+          onClick={() => undo(team)}
+          aria-label={`Subtract 1 from ${name}`}
+          className={`btn-press absolute top-3 landscape:top-1.5 left-3 w-10 h-10 landscape:w-8 landscape:h-8 rounded-full ${c.overlay} ${c.text} flex items-center justify-center`}
+        >
+          <Icon name="Minus" size={16} />
+        </div>
+        <div
+          role="button"
+          onClick={(e) => { e.stopPropagation(); setHistoryOpen(true); }}
+          aria-label="Show scoring history"
+          className={`btn-press absolute top-3 landscape:top-1.5 right-3 w-10 h-10 landscape:w-8 landscape:h-8 rounded-full ${c.overlay} ${c.text} flex items-center justify-center`}
+        >
+          <Icon name="Clock" size={16} />
+        </div>
+        <div className={`text-lg landscape:text-sm font-bold ${c.text} opacity-70 truncate max-w-full`}>{name}</div>
+        <div className={`text-7xl landscape:text-5xl font-black tabular ${c.text}`}>{score}</div>
+        <div className="grid grid-cols-3 landscape:flex landscape:flex-row gap-2 landscape:gap-1.5 w-full">
+          <BigButton onClick={() => addScore(team, 1)} className={`relative rounded-2xl ${c.overlay} ${c.text} py-5 landscape:py-3 font-extrabold text-lg landscape:text-base flex-1 flex items-center justify-center`}>
+            <span>+1</span>
+            <span className={`absolute bottom-1.5 landscape:bottom-0.5 text-[9px] font-bold ${c.sub} tracking-widest`}>FT</span>
+          </BigButton>
+          <BigButton onClick={() => addScore(team, 2)} className={`rounded-2xl ${c.overlay} ${c.text} py-5 landscape:py-3 font-extrabold text-lg landscape:text-base flex-1 flex items-center justify-center`}>
+            +2
+          </BigButton>
+          <BigButton onClick={() => addScore(team, 3)} className={`rounded-2xl ${c.overlay} ${c.text} border-2 border-white/30 py-5 landscape:py-3 font-extrabold text-lg landscape:text-base flex-1 flex items-center justify-center`}>
+            +3
+          </BigButton>
+        </div>
+        {appSettings.basketballFoulsEnabled && (
+          <div className="w-full flex items-center justify-between px-1">
+            <span className={`text-[10px] font-bold ${c.sub} tracking-widest`}>FOULS</span>
+            <div className="flex items-center gap-2">
+              <IconButton name="Minus" size={12} onClick={(e) => { e.stopPropagation(); adjustFouls(team, -1); }} label="Remove foul" />
+              <span className={`text-sm font-extrabold tabular w-4 text-center ${c.text}`}>{team === 'A' ? bk.foulsA : bk.foulsB}</span>
+              <IconButton name="Plus" size={12} onClick={(e) => { e.stopPropagation(); adjustFouls(team, 1); }} label="Add foul" />
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const periodOptions = bk.periodMode === 'quarters'
+    ? [{ value: 1, label: '1st' }, { value: 2, label: '2nd' }, { value: 3, label: '3rd' }, { value: 4, label: '4th' }]
+    : [{ value: 1, label: '1st Half' }, { value: 2, label: '2nd Half' }];
+
+  return (
+    <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:h-dvh landscape:min-h-0">
+      <EndGamePill onClick={() => setEndGameOpen(true)} />
+
+      <BasketballHistoryPanel
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        history={bk.history}
+        onDismissEntry={dismissHistoryEntry}
+        bk={bk}
+      />
+
+      <Header title="Basketball" onBack={onBack} onSettings={() => setSettingsOpen(true)} />
+      <TimerBar globalTimer={globalTimer} />
+
+      <div className="flex flex-col landscape:flex-row gap-3 landscape:gap-2 flex-1 mb-4 landscape:mb-2 landscape:min-h-0">
+        <TeamSide team="A" />
+        <TeamSide team="B" />
+      </div>
+
+      <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 landscape:py-2 px-5 mb-3 landscape:mb-1.5 shrink-0">
+        <div className="text-xs font-extrabold tracking-widest text-white/40 text-center mb-2 landscape:mb-1">
+          {bk.periodMode === 'quarters' ? 'QUARTER' : 'HALF'}
+        </div>
+        <Segmented options={periodOptions} value={bk.half} onChange={setHalf} />
+      </div>
+
+      <BigButton
+        onClick={undoLast}
+        disabled={!lastAction}
+        className="w-full rounded-2xl bg-white/10 py-4 landscape:py-2 font-bold text-white/80 flex items-center justify-center gap-2 shrink-0"
+      >
+        <Icon name="RotateCcw" size={18} />
+        {lastAction ? `Undo +${lastAction.pts} · ${displayTeamName(lastAction.team === 'A' ? bk.teamA : bk.teamB, lastAction.team)}` : 'Undo Last Score'}
+      </BigButton>
+
+      <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Basketball Settings">
+        <TeamPicker
+          label="Team A"
+          teamName={bk.teamA}
+          teamColor={bk.colorA}
+          onSelect={(t) => setBk((s) => ({ ...s, teamA: t.label, colorA: t.color }))}
+          onCustomName={(v) => setBk((s) => ({ ...s, teamA: v }))}
+          onCustomColor={(c) => setBk((s) => ({ ...s, colorA: c }))}
+        />
+        <TeamPicker
+          label="Team B"
+          teamName={bk.teamB}
+          teamColor={bk.colorB}
+          onSelect={(t) => setBk((s) => ({ ...s, teamB: t.label, colorB: t.color }))}
+          onCustomName={(v) => setBk((s) => ({ ...s, teamB: v }))}
+          onCustomColor={(c) => setBk((s) => ({ ...s, colorB: c }))}
+        />
+        <Field label="Periods">
+          <Segmented
+            options={[{ value: 'halves', label: 'Halves' }, { value: 'quarters', label: 'Quarters' }]}
+            value={bk.periodMode}
+            onChange={(v) => setBk((s) => ({ ...s, periodMode: v, half: 1 }))}
+          />
+        </Field>
+        <BigButton
+          onClick={() => setBk(defaultBasketball())}
+          className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2 mb-3"
+        >
+          Reset Game
+        </BigButton>
+        <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
+          Done
+        </BigButton>
+      </Sheet>
+
+      <EndGameSheet
+        open={endGameOpen}
+        onClose={() => setEndGameOpen(false)}
+        sportLabel="Basketball"
+        teamA={bk.teamA}
+        teamB={bk.teamB}
+        scoreA={bk.scoreA}
+        scoreB={bk.scoreB}
+        globalTimer={globalTimer}
+      />
+    </div>
+  );
+}
+
+/* ============================== SPLASH ============================== */
+
+function SplashScreen({ onDone }) {
+  const doneRef = useRef(false);
+  const finish = useCallback(() => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    onDone();
+  }, [onDone]);
+
+  useEffect(() => {
+    const t = setTimeout(finish, 1000);
+    return () => clearTimeout(t);
+  }, [finish]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] bg-black overflow-hidden splash-overlay flex flex-col items-center justify-center"
+      onClick={finish}
+      onTouchStart={finish}
+      role="button"
+      aria-label="Skip intro animation"
+    >
+      <img src="./icon-512.png" alt="" className="w-32 h-32 rounded-3xl" />
+    </div>
+  );
+}
+
+/* ============================== APP ============================== */
+
+function App() {
+  const [showSplash, setShowSplash] = useState(true);
+  const [screen, setScreen] = useLocalStorage('refcourt_screen_v1', 'home');
+  const globalTimer = useGlobalTimer();
+  const [settings, setSettings] = useAppSettings();
+
+  useEffect(() => {
+    window.history.replaceState({ screen: 'home' }, '');
+    if (screen !== 'home') {
+      window.history.pushState({ screen }, '');
+    }
+  }, []);
+
+  useEffect(() => {
+    const onPopState = (e) => {
+      setScreen((e.state && e.state.screen) || 'home');
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [setScreen]);
+
+  const goTo = (s) => {
+    setScreen(s);
+    window.history.pushState({ screen: s }, '');
+  };
+
+  const goHome = () => window.history.back();
+
+  let content;
+  if (screen === 'home') content = <Home onSelect={goTo} settings={settings} setSettings={setSettings} />;
+  else if (screen === 'volleyball') content = <Volleyball globalTimer={globalTimer} onBack={goHome} />;
+  else if (screen === 'football') content = <Football globalTimer={globalTimer} onBack={goHome} />;
+  else if (screen === 'basketball') content = <Basketball globalTimer={globalTimer} onBack={goHome} />;
+  else if (UNIVERSAL_CONFIG[screen]) content = <Universal sport={screen} globalTimer={globalTimer} onBack={goHome} />;
+  else content = <Home onSelect={goTo} settings={settings} setSettings={setSettings} />;
+
+  return (
+    <div className="h-dvh overflow-hidden">
+      <div className="h-full overflow-y-auto overscroll-y-auto">{content}</div>
+      {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
+</script>
+<script>
+  (function () {
+    var src = document.getElementById('app-source').textContent;
+    var out = Babel.transform(src, { presets: [['react', { runtime: 'classic' }]] }).code;
+    (0, eval)(out);
+  })();
+</script>
+</body>
+</html>
