@@ -20,6 +20,18 @@
         console.warn('Service worker registration failed:', err);
       });
     });
+    // A new service worker takes control (via skipWaiting + clients.claim)
+    // whenever a deployed update is detected. Without this, a PWA left open
+    // in standalone mode keeps running the stale JS/HTML it already loaded
+    // until the user force-quits and reopens it. Reload once so an update
+    // check on app launch actually reaches the screen. Game state survives
+    // via localStorage, so this is safe mid-use.
+    let reloadedForUpdate = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloadedForUpdate) return;
+      reloadedForUpdate = true;
+      window.location.reload();
+    });
   }
 </script>
 
@@ -117,7 +129,7 @@
 
 const { useState, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = '1.11.0';
+const APP_VERSION = '1.12.0';
 
 /* ============================== ICONS ============================== */
 
@@ -309,12 +321,75 @@ function EndGamePill({ onClick }) {
 }
 
 function Sheet({ open, onClose, title, children }) {
+  const sheetRef = useRef(null);
+  const dragRef = useRef(null);
+  const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+
+  const onDragStart = useCallback((e) => {
+    const point = e.touches ? e.touches[0] : e;
+    dragRef.current = { startY: point.clientY, lastY: point.clientY, lastT: Date.now(), velocity: 0, dy: 0 };
+    setDragging(true);
+  }, []);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e) => {
+      const d = dragRef.current;
+      if (!d) return;
+      const point = e.touches ? e.touches[0] : e;
+      const dy = Math.max(0, point.clientY - d.startY);
+      const now = Date.now();
+      const dt = now - d.lastT;
+      if (dt > 0) d.velocity = (point.clientY - d.lastY) / dt;
+      d.lastY = point.clientY;
+      d.lastT = now;
+      d.dy = dy;
+      setDragY(dy);
+      if (e.cancelable) e.preventDefault();
+    };
+    const onEnd = () => {
+      const d = dragRef.current;
+      const shouldClose = d && (d.dy > 120 || d.velocity > 0.6);
+      dragRef.current = null;
+      setDragging(false);
+      if (shouldClose) {
+        onClose();
+      }
+      setDragY(0);
+    };
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onEnd);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onEnd);
+    return () => {
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onEnd);
+    };
+  }, [dragging, onClose]);
+
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center">
-      <div className="absolute inset-0 bg-black/70" onClick={onClose} />
-      <div className="sheet-up relative w-full max-w-md bg-zinc-950 border-t border-white/10 rounded-t-3xl px-6 pt-5 pb-8 max-h-[85dvh] overflow-y-auto" style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 2rem)' }}>
-        <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-white/20" />
+      <div className="absolute inset-0 bg-black/70" onClick={onClose} style={{ opacity: dragging ? Math.max(0.2, 1 - dragY / 300) : 1 }} />
+      <div
+        ref={sheetRef}
+        className={`${dragging ? '' : 'sheet-up'} relative w-full max-w-md bg-zinc-950 border-t border-white/10 rounded-t-3xl px-6 pt-5 pb-8 max-h-[85dvh] overflow-y-auto`}
+        style={{
+          paddingBottom: 'calc(env(safe-area-inset-bottom) + 2rem)',
+          transform: dragY ? `translateY(${dragY}px)` : undefined,
+          transition: dragging ? 'none' : 'transform 0.2s ease',
+        }}
+      >
+        <div
+          className="flex justify-center items-center -mx-6 -mt-5 mb-4 py-3 cursor-grab touch-none"
+          onTouchStart={onDragStart}
+          onMouseDown={onDragStart}
+        >
+          <div className="h-1.5 w-12 rounded-full bg-white/20" />
+        </div>
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-xl font-extrabold tracking-tight">{title}</h2>
           <IconButton name="X" onClick={onClose} size={18} label="Close" />
