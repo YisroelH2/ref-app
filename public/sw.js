@@ -12,7 +12,7 @@
 //   - In the fetch handler we must treat `response.type === 'opaque'` as a
 //     cacheable success, since opaque responses always report `ok: false`.
 
-const CACHE_VERSION = 'v3.1.2';
+const CACHE_VERSION = 'v3.1.3';
 const CACHE_NAME = `refcourt-${CACHE_VERSION}`;
 
 // Safari/WebKit refuses to let a service worker fulfill a *navigation*

@@ -3,7 +3,7 @@ import Icon from './components/Icon.jsx';
 import IconButton from './components/IconButton.jsx';
 import Sheet from './components/Sheet.jsx';
 
-const APP_VERSION = '3.1.2';
+const APP_VERSION = '3.1.3';
 
 
 
@@ -88,6 +88,12 @@ function vibrate(pattern) {
   try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
 }
 
+function pluralizePeriodUnit(unit, count) {
+  if (count === 1) return unit;
+  if (unit.toLowerCase() === 'half') return 'Halves';
+  return `${unit}s`;
+}
+
 /* ============================== APP SETTINGS ============================== */
 
 const APP_SETTINGS_KEY = 'refcourt_app_settings_v1';
@@ -102,6 +108,8 @@ function defaultAppSettings() {
     volleyballTapToScore: false,
     basketballFoulsEnabled: false,
     selectedCamp: '',
+    hockeyDefaultFormat: 'periods',
+    basketballDefaultFormat: 'halves',
   };
 }
 
@@ -509,14 +517,15 @@ function useGlobalTimer() {
     }
   }, [remainingMs, timer.configured, timer.isRunning, timer.finished]);
 
-  const applyAutoSetup = useCallback((endTs, halftimeMins, bufferMins, activityLabel) => {
+  const applyAutoSetup = useCallback((endTs, halftimeMins, bufferMins, activityLabel, skipHalftime, totalPeriods) => {
     const now = Date.now();
     const totalMs = Math.max(60000, endTs - now);
-    const ht = Math.max(0, halftimeMins || 0);
+    const ht = skipHalftime ? 0 : Math.max(0, halftimeMins || 0);
     const buf = Math.max(0, bufferMins || 0);
     const deductionMs = (ht + buf) * 60000;
     const playableMs = Math.max(60000, totalMs - deductionMs);
-    const half = playableMs / 2;
+    const totalHalves = skipHalftime ? 1 : Math.max(1, totalPeriods || 2);
+    const half = playableMs / totalHalves;
     const label = 'Ends ' + new Date(endTs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
     setTimer({
       configured: true,
@@ -524,7 +533,7 @@ function useGlobalTimer() {
       endLabel: label,
       halfMs: half,
       currentHalf: 1,
-      totalHalves: 2,
+      totalHalves,
       periodEndTs: now + half,
       isRunning: true,
       pausedRemainingMs: half,
@@ -536,12 +545,12 @@ function useGlobalTimer() {
     });
   }, [setTimer]);
 
-  const setupAuto = useCallback((hh, mm, halftimeMins, bufferMins, activityLabel) => {
-    applyAutoSetup(nextOccurrence(hh, mm), halftimeMins, bufferMins, activityLabel);
+  const setupAuto = useCallback((hh, mm, halftimeMins, bufferMins, activityLabel, skipHalftime, totalPeriods) => {
+    applyAutoSetup(nextOccurrence(hh, mm), halftimeMins, bufferMins, activityLabel, skipHalftime, totalPeriods);
   }, [applyAutoSetup]);
 
-  const setupAutoAt = useCallback((endTs, halftimeMins, bufferMins, activityLabel) => {
-    applyAutoSetup(endTs, halftimeMins, bufferMins, activityLabel);
+  const setupAutoAt = useCallback((endTs, halftimeMins, bufferMins, activityLabel, skipHalftime, totalPeriods) => {
+    applyAutoSetup(endTs, halftimeMins, bufferMins, activityLabel, skipHalftime, totalPeriods);
   }, [applyAutoSetup]);
 
   const setActivityLabel = useCallback((label) => {
@@ -572,15 +581,18 @@ function useGlobalTimer() {
   }, [setTimer]);
 
   // Re-splits whatever time is left before the original scheduled end across the
-  // half(s) still to play, so it's correct whether called mid-Half-1 (still needs
-  // to leave room for a whole next half) or in the final half (just snap to the
-  // target). Also re-reserves halftime/buffer minutes that haven't happened yet.
+  // period(s) still to play, so it's correct whether called early on (still needs
+  // to leave room for the remaining periods) or in the final one (just snap to
+  // the target). Also re-reserves halftime/buffer minutes that haven't happened
+  // yet — halftime is treated as sitting at the game's midpoint (e.g. between
+  // quarters 2 and 3 for a 4-quarter game), not strictly after period 1.
   const recalculate = useCallback(() => {
     setTimer((t) => {
       if (!t.targetEndTs || t.mode !== 'auto') return t;
       const now = Date.now();
       const remainingHalves = Math.max(1, t.totalHalves - t.currentHalf + 1);
-      const stillToReserveMins = t.currentHalf === 1 ? (t.halftimeMins || 0) + (t.bufferMins || 0) : (t.bufferMins || 0);
+      const halftimeStillAhead = t.currentHalf <= Math.ceil(t.totalHalves / 2);
+      const stillToReserveMins = halftimeStillAhead ? (t.halftimeMins || 0) + (t.bufferMins || 0) : (t.bufferMins || 0);
       const totalRemaining = Math.max(10000, (t.targetEndTs - now) - stillToReserveMins * 60000);
       const newHalfMs = Math.max(10000, totalRemaining / remainingHalves);
       if (t.isRunning) {
@@ -633,7 +645,7 @@ function useGlobalTimer() {
   return { timer, remainingMs, setupAuto, setupAutoAt, setupManual, setActivityLabel, recalculate, updateAutoSettings, restartHalfWithBuffer, toggle, reset };
 }
 
-function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupManual, onUpdateAutoSettings, initialMode, initialHalftimeMins, initialBufferMins, initialActivityLabel, isConfigured, onReset }) {
+function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupManual, onUpdateAutoSettings, initialMode, initialHalftimeMins, initialBufferMins, initialActivityLabel, initialSkipHalftime, totalPeriods = 2, periodUnitLabel = 'Half', isConfigured, onReset }) {
   const [mode, setMode] = useState(initialMode || 'auto');
   const [preset, setPreset] = useState('custom');
   const [activityLabel, setActivityLabelState] = useState('');
@@ -643,12 +655,14 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupMan
   const [seconds, setSeconds] = useState('0');
   const [halftimeMins, setHalftimeMins] = useState(String(initialHalftimeMins ?? 5));
   const [bufferMins, setBufferMins] = useState(String(initialBufferMins ?? 2));
+  const [skipHalftime, setSkipHalftime] = useState(!!initialSkipHalftime);
 
   useEffect(() => {
     if (open) {
       setMode(initialMode || 'auto');
       setHalftimeMins(String(initialHalftimeMins ?? 5));
       setBufferMins(String(initialBufferMins ?? 2));
+      setSkipHalftime(!!initialSkipHalftime);
       setHour('');
       setMinute('');
 
@@ -661,7 +675,7 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupMan
       }
       setActivityLabelState(initialActivityLabel || (detected ? detected.label : ''));
     }
-  }, [open, initialMode, initialHalftimeMins, initialBufferMins, initialActivityLabel]);
+  }, [open, initialMode, initialHalftimeMins, initialBufferMins, initialActivityLabel, initialSkipHalftime]);
 
   const selectedSlot = CAMP_SCHEDULE.find((s) => s.key === preset);
 
@@ -670,13 +684,13 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupMan
       const ht = Math.max(0, parseInt(halftimeMins, 10) || 0);
       const buf = Math.max(0, parseInt(bufferMins, 10) || 0);
       if (selectedSlot) {
-        onSetupAutoAt(todayAt(selectedSlot.endHour, selectedSlot.endMinute), ht, buf, selectedSlot.label);
+        onSetupAutoAt(todayAt(selectedSlot.endHour, selectedSlot.endMinute), ht, buf, selectedSlot.label, skipHalftime, totalPeriods);
       } else {
         const h12 = parseInt(hour, 10);
         const m = parseInt(minute, 10);
         if (!h12 || h12 < 1 || h12 > 12 || isNaN(m) || m < 0 || m > 59) return;
         const hh = resolveClosestHour24(h12, m);
-        onSetupAuto(hh, m, ht, buf, activityLabel);
+        onSetupAuto(hh, m, ht, buf, activityLabel, skipHalftime, totalPeriods);
       }
     } else {
       const m = Math.max(0, parseInt(minutes, 10) || 0);
@@ -708,7 +722,8 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupMan
       {mode === 'auto' ? (
         <>
           <p className="text-white/50 text-sm mb-5 leading-relaxed">
-            Pick today's activity slot, or go custom for a one-off time. We'll split the remaining time evenly into two halves and start the countdown.
+            Pick today's activity slot, or go custom for a one-off time. We'll split the remaining time evenly into{' '}
+            {skipHalftime ? 'one continuous countdown' : `${totalPeriods} ${pluralizePeriodUnit(periodUnitLabel, totalPeriods).toLowerCase()}`} and start the countdown.
           </p>
           <Field label="Activity">
             <div className="grid grid-cols-3 gap-2">
@@ -772,6 +787,16 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupMan
               </p>
             </Field>
           )}
+          <button
+            type="button"
+            onClick={() => setSkipHalftime((s) => !s)}
+            className={`btn-press w-full flex items-center justify-between gap-2 rounded-xl px-4 py-3 mb-5 border ${skipHalftime ? 'bg-emerald-400 border-emerald-400 text-black' : 'bg-white/5 border-white/10 text-white/70'}`}
+          >
+            <span className="text-sm font-bold">Skip Breaks — one straight countdown to the end</span>
+            <span className={`shrink-0 w-11 h-6 rounded-full relative transition-colors ${skipHalftime ? 'bg-black/20' : 'bg-white/15'}`}>
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform ${skipHalftime ? 'translate-x-5 bg-black' : 'bg-white/70'}`} />
+            </span>
+          </button>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Halftime (mins)">
               <input
@@ -781,7 +806,8 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupMan
                 max="60"
                 value={halftimeMins}
                 onChange={(e) => setHalftimeMins(e.target.value)}
-                className="w-full rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-2xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular"
+                disabled={skipHalftime}
+                className="w-full rounded-xl bg-white/10 border border-white/10 px-3 py-3 text-2xl font-extrabold text-white outline-none focus:border-emerald-400/60 tabular disabled:opacity-30"
               />
             </Field>
             <Field label="End Buffer (mins)">
@@ -797,7 +823,9 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupMan
             </Field>
           </div>
           <p className="text-white/30 text-xs mb-2 -mt-3 leading-relaxed">
-            We'll subtract halftime and the end buffer from the remaining time, then split what's left evenly into two halves.
+            {skipHalftime
+              ? "We'll subtract just the end buffer from the remaining time and count straight down to it — no breaks."
+              : `We'll subtract halftime and the end buffer from the remaining time, then split what's left evenly into ${totalPeriods} ${pluralizePeriodUnit(periodUnitLabel, totalPeriods).toLowerCase()}.`}
           </p>
 
           {isConfigured && (
@@ -813,7 +841,7 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupMan
           )}
           {isConfigured && (
             <p className="text-white/30 text-xs mb-3 leading-relaxed">
-              Updates these numbers without restarting the clock or touching which half you're on. Use "Reset Half" on the clock to apply the new buffer to the countdown.
+              Updates these numbers without restarting the clock or touching which {periodUnitLabel.toLowerCase()} you're on. Use "Reset {periodUnitLabel}" on the clock to apply the new buffer to the countdown.
             </p>
           )}
         </>
@@ -872,7 +900,7 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupMan
   );
 }
 
-function TimerBar({ globalTimer }) {
+function TimerBar({ globalTimer, periodCount = 2, unitLabel = 'Half' }) {
   const { timer, remainingMs, toggle, reset } = globalTimer;
   const [setupOpen, setSetupOpen] = useState(false);
   const [driftDismissed, setDriftDismissed] = useState(false);
@@ -948,6 +976,9 @@ function TimerBar({ globalTimer }) {
           initialMode={timer.mode}
           initialHalftimeMins={timer.halftimeMins}
           initialBufferMins={timer.bufferMins}
+          initialSkipHalftime={timer.totalHalves === 1}
+          totalPeriods={periodCount}
+          periodUnitLabel={unitLabel}
           initialActivityLabel={timer.activityLabel}
           isConfigured={timer.configured}
           onReset={reset}
@@ -985,7 +1016,7 @@ function TimerBar({ globalTimer }) {
       >
         <div className="text-left">
           <div className={`text-xs font-extrabold tracking-widest ${isRunning ? 'text-emerald-400' : 'text-red-400'}`}>
-            {timer.totalHalves > 1 ? `HALF ${timer.currentHalf} ` : ''}{isRunning ? '· RUNNING' : '· PAUSED'}
+            {timer.totalHalves > 1 ? `${unitLabel.toUpperCase()} ${timer.currentHalf} ` : ''}{isRunning ? '· RUNNING' : '· PAUSED'}
           </div>
           <div className={`text-4xl landscape:text-2xl font-black tabular ${isRunning ? 'text-white' : 'text-red-400'}`}>
             {formatClock(seconds)}
@@ -1026,10 +1057,10 @@ function TimerBar({ globalTimer }) {
           {timer.mode === 'auto' && (
             <button
               onClick={() => globalTimer.restartHalfWithBuffer()}
-              aria-label="Reset this half's countdown to the half length plus buffer"
+              aria-label={`Reset this ${unitLabel.toLowerCase()}'s countdown to the ${unitLabel.toLowerCase()} length plus buffer`}
               className="btn-press flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white/60"
             >
-              <Icon name="Repeat" size={11} /> Reset Half
+              <Icon name="Repeat" size={11} /> Reset {unitLabel}
             </button>
           )}
           {timer.mode === 'auto' && !!timer.targetEndTs && (
@@ -1048,9 +1079,13 @@ function TimerBar({ globalTimer }) {
         onSetupAuto={globalTimer.setupAuto}
         onSetupAutoAt={globalTimer.setupAutoAt}
         onSetupManual={globalTimer.setupManual}
+        onUpdateAutoSettings={globalTimer.updateAutoSettings}
         initialMode={timer.mode}
         initialHalftimeMins={timer.halftimeMins}
         initialBufferMins={timer.bufferMins}
+        initialSkipHalftime={timer.totalHalves === 1}
+        totalPeriods={periodCount}
+        periodUnitLabel={unitLabel}
         initialActivityLabel={timer.activityLabel}
         isConfigured={timer.configured}
         onReset={reset}
@@ -1364,6 +1399,28 @@ function AppSettingsSheet({ open, onClose, settings, setSettings }) {
         />
         <p className="text-white/30 text-xs mt-2 leading-relaxed">
           When on, each Basketball team gets a small foul counter under their scoring buttons.
+        </p>
+      </Field>
+
+      <Field label="Basketball · Default Format">
+        <Segmented
+          options={[{ value: 'halves', label: '2 Halves' }, { value: 'quarters', label: '4 Quarters' }]}
+          value={settings.basketballDefaultFormat}
+          onChange={(v) => setSettings((s) => ({ ...s, basketballDefaultFormat: v }))}
+        />
+        <p className="text-white/30 text-xs mt-2 leading-relaxed">
+          What new Basketball games start in, and what the game clock splits into. Each game's own settings can still switch it just for that game.
+        </p>
+      </Field>
+
+      <Field label="Hockey · Default Format">
+        <Segmented
+          options={[{ value: 'periods', label: '3 Periods' }, { value: 'halves', label: '2 Halves' }]}
+          value={settings.hockeyDefaultFormat}
+          onChange={(v) => setSettings((s) => ({ ...s, hockeyDefaultFormat: v }))}
+        />
+        <p className="text-white/30 text-xs mt-2 leading-relaxed">
+          What new Hockey games start in, and what the game clock splits into. Most refs run halves — switch this once here instead of every game.
         </p>
       </Field>
 
@@ -1872,7 +1929,11 @@ function Football({ globalTimer, onBack }) {
 
   // Auto-advance to the next half the moment the game clock hits 00:00, so the
   // ref doesn't have to also remember to tap the chevron.
-  const timerJustFinishedRef = useRef(false);
+  // Seed with the timer's current state (not a hardcoded false) — otherwise
+  // mounting on a screen while the shared clock is already left over
+  // "finished" from a different game reads as "it just finished here" and
+  // spuriously auto-advances this sport's own half/period counter by one.
+  const timerJustFinishedRef = useRef(globalTimer.timer.finished);
   useEffect(() => {
     const finished = globalTimer.timer.finished;
     if (finished && !timerJustFinishedRef.current) {
@@ -2012,7 +2073,7 @@ const UNIVERSAL_CONFIG = {
 };
 
 function defaultUniversal() {
-  return { teamA: '', teamB: '', scoreA: 0, scoreB: 0, colorA: null, colorB: null, period: 1, half: 'Top', topTeam: 'A', balls: 0, strikes: 0, outs: 0, hockeyFormat: 'periods' };
+  return { teamA: '', teamB: '', scoreA: 0, scoreB: 0, colorA: null, colorB: null, period: 1, half: 'Top', topTeam: 'A', balls: 0, strikes: 0, outs: 0, hockeyFormat: getAppSettings().hockeyDefaultFormat || 'periods' };
 }
 
 function hockeyMaxUnit(hockeyFormat) {
@@ -2056,7 +2117,11 @@ function Universal({ sport, globalTimer, onBack }) {
 
   // Auto-advance to the next period/half the moment the game clock hits 00:00
   // (baseball tracks innings independently of the clock, so it's excluded).
-  const timerJustFinishedRef = useRef(false);
+  // Seed with the timer's current state (not a hardcoded false) — otherwise
+  // mounting on a screen while the shared clock is already left over
+  // "finished" from a different game reads as "it just finished here" and
+  // spuriously auto-advances this sport's own half/period counter by one.
+  const timerJustFinishedRef = useRef(globalTimer.timer.finished);
   useEffect(() => {
     if (sport !== 'hockey' && sport !== 'soccer') return;
     const finished = globalTimer.timer.finished;
@@ -2147,7 +2212,7 @@ function Universal({ sport, globalTimer, onBack }) {
       )}
       <EndGamePill onClick={() => setEndGameOpen(true)} />
       <Header title={cfg.title} onBack={onBack} onSettings={() => setSettingsOpen(true)} />
-      {sport !== 'baseball' && <TimerBar globalTimer={globalTimer} />}
+      {sport !== 'baseball' && <TimerBar globalTimer={globalTimer} periodCount={periodMaxUnit} unitLabel={periodUnit} />}
 
       <div className="flex flex-col landscape:flex-row gap-3 landscape:gap-2 flex-1 mb-4 landscape:mb-2 landscape:min-h-0" style={{ minHeight: '48vh' }}>
         <ScoreHalf
@@ -2296,7 +2361,7 @@ function Universal({ sport, globalTimer, onBack }) {
 const BK_KEY = 'refcourt_basketball_v1';
 
 function defaultBasketball() {
-  return { teamA: '', teamB: '', scoreA: 0, scoreB: 0, colorA: null, colorB: null, half: 1, periodMode: 'halves', history: [], foulsA: 0, foulsB: 0 };
+  return { teamA: '', teamB: '', scoreA: 0, scoreB: 0, colorA: null, colorB: null, half: 1, periodMode: getAppSettings().basketballDefaultFormat || 'halves', history: [], foulsA: 0, foulsB: 0 };
 }
 
 function basketballPeriodLabel(bk) {
@@ -2496,7 +2561,11 @@ function Basketball({ globalTimer, onBack }) {
   });
 
   // Auto-advance to the next half/quarter the moment the game clock hits 00:00.
-  const timerJustFinishedRef = useRef(false);
+  // Seed with the timer's current state (not a hardcoded false) — otherwise
+  // mounting on a screen while the shared clock is already left over
+  // "finished" from a different game reads as "it just finished here" and
+  // spuriously auto-advances this sport's own half/period counter by one.
+  const timerJustFinishedRef = useRef(globalTimer.timer.finished);
   useEffect(() => {
     const finished = globalTimer.timer.finished;
     if (finished && !timerJustFinishedRef.current) {
@@ -2579,7 +2648,11 @@ function Basketball({ globalTimer, onBack }) {
       />
 
       <Header title="Basketball" onBack={onBack} onSettings={() => setSettingsOpen(true)} />
-      <TimerBar globalTimer={globalTimer} />
+      <TimerBar
+        globalTimer={globalTimer}
+        periodCount={bk.periodMode === 'quarters' ? 4 : 2}
+        unitLabel={bk.periodMode === 'quarters' ? 'Quarter' : 'Half'}
+      />
 
       <div className="flex flex-col landscape:flex-row gap-3 landscape:gap-2 flex-1 mb-4 landscape:mb-2 landscape:min-h-0">
         <TeamSide team="A" />
