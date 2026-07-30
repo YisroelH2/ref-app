@@ -136,7 +136,7 @@
 
 const { useState, useEffect, useRef, useCallback } = React;
 
-const APP_VERSION = '2.0.1';
+const APP_VERSION = '3.0.0';
 
 /* ============================== ICONS ============================== */
 
@@ -315,11 +315,11 @@ function IconButton({ name, onClick, size = 22, className = '', label }) {
 
 function EndGamePill({ onClick }) {
   return (
-    <div className="flex justify-center mb-4">
+    <div className="flex justify-center mb-4 landscape:mb-1">
       <button
         onClick={onClick}
         aria-label="End Game"
-        className="btn-press flex items-center gap-2 rounded-full bg-orange-500/90 text-white px-7 py-3.5 text-sm font-extrabold tracking-widest active:bg-orange-600 shadow-lg shadow-orange-500/20 min-h-[52px]"
+        className="btn-press flex items-center gap-2 rounded-full bg-orange-500/90 text-white px-7 landscape:px-5 py-3.5 landscape:py-1.5 text-sm font-extrabold tracking-widest active:bg-orange-600 shadow-lg shadow-orange-500/20 min-h-[52px] landscape:min-h-0"
       >
         <Icon name="Flag" size={18} /> END GAME
       </button>
@@ -394,7 +394,7 @@ function Sheet({ open, onClose, title, children }) {
       <div className="absolute inset-0 bg-black/70" onClick={onClose} style={{ opacity: dragging ? Math.max(0.2, 1 - dragY / 300) : 1 }} />
       <div
         ref={sheetRef}
-        className={`${dragging ? '' : 'sheet-up'} relative w-full max-w-md bg-zinc-950 border-t border-white/10 rounded-t-3xl px-6 pt-5 pb-8 max-h-[85dvh] overflow-y-auto cursor-grab`}
+        className={`${dragging ? '' : 'sheet-up'} relative w-full max-w-md bg-zinc-950 border-t border-white/10 rounded-t-3xl px-6 pt-5 pb-8 landscape:pt-3 landscape:pb-5 max-h-[85dvh] landscape:max-h-[90vh] overflow-y-auto landscape:overflow-y-auto cursor-grab`}
         style={{
           paddingBottom: 'calc(env(safe-area-inset-bottom) + 2rem)',
           transform: dragY ? `translateY(${dragY}px)` : undefined,
@@ -403,10 +403,10 @@ function Sheet({ open, onClose, title, children }) {
         onTouchStart={onDragStart}
         onMouseDown={onDragStart}
       >
-        <div className="flex justify-center items-center -mx-6 -mt-5 mb-4 py-3">
+        <div className="flex justify-center items-center -mx-6 -mt-5 landscape:-mt-3 mb-4 landscape:mb-2 py-3 landscape:py-1.5">
           <div className="h-1.5 w-12 rounded-full bg-white/20" />
         </div>
-        <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center justify-between mb-5 landscape:mb-3">
           <h2 className="text-xl font-extrabold tracking-tight">{title}</h2>
           <IconButton name="X" onClick={onClose} size={18} label="Close" />
         </div>
@@ -1133,7 +1133,7 @@ function TimerBar({ globalTimer }) {
       <>
         <button
           onClick={() => setSetupOpen(true)}
-          className="btn-press w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-white/20 py-4 text-white/60 font-bold text-sm mb-4"
+          className="btn-press w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-white/20 py-4 landscape:py-2 text-white/60 font-bold text-sm mb-4 landscape:mb-1"
         >
           <Icon name="Clock" size={18} />
           Set Game Clock
@@ -1157,10 +1157,10 @@ function TimerBar({ globalTimer }) {
 
   if (timer.finished) {
     return (
-      <div className="flash-red rounded-2xl border-2 border-red-500 py-4 px-4 mb-4 flex items-center justify-between">
+      <div className="flash-red rounded-2xl border-2 border-red-500 py-4 landscape:py-1.5 px-4 landscape:px-3 mb-4 landscape:mb-1 flex items-center justify-between">
         <div>
           <div className="text-red-400 text-xs font-extrabold tracking-widest">TIME'S UP</div>
-          <div className="text-2xl font-black tabular text-white">00:00</div>
+          <div className="text-2xl landscape:text-lg font-black tabular text-white">00:00</div>
         </div>
         <IconButton name="RotateCcw" onClick={reset} label="Reset timer" />
       </div>
@@ -1171,14 +1171,14 @@ function TimerBar({ globalTimer }) {
   const isRunning = timer.isRunning;
 
   return (
-    <div className="mb-4">
+    <div className="mb-4 landscape:mb-1">
       <button
         onPointerDown={handlePillPointerDown}
         onPointerUp={handlePillPointerUp}
         onPointerLeave={handlePillPointerLeave}
         onPointerCancel={handlePillPointerLeave}
         onContextMenu={(e) => e.preventDefault()}
-        className={`btn-press w-full rounded-2xl border-2 py-4 px-5 flex items-center justify-between transition-colors ${
+        className={`btn-press w-full rounded-2xl border-2 py-4 landscape:py-1.5 px-5 landscape:px-3 flex items-center justify-between transition-colors ${
           isRunning ? 'border-emerald-400/40 bg-emerald-400/5' : 'border-red-500 bg-red-500/10 animate-pulse-fast'
         }`}
       >
@@ -1186,7 +1186,7 @@ function TimerBar({ globalTimer }) {
           <div className={`text-xs font-extrabold tracking-widest ${isRunning ? 'text-emerald-400' : 'text-red-400'}`}>
             {timer.totalHalves > 1 ? `HALF ${timer.currentHalf} ` : ''}{isRunning ? '· RUNNING' : '· PAUSED'}
           </div>
-          <div className={`text-4xl font-black tabular ${isRunning ? 'text-white' : 'text-red-400'}`}>
+          <div className={`text-4xl landscape:text-2xl font-black tabular ${isRunning ? 'text-white' : 'text-red-400'}`}>
             {formatClock(seconds)}
           </div>
         </div>
@@ -1194,7 +1194,7 @@ function TimerBar({ globalTimer }) {
       </button>
 
       {showDrift && (
-        <div className="mt-2 rounded-2xl bg-amber-400/15 border border-amber-400/40 px-4 py-3">
+        <div className="mt-2 landscape:mt-1 rounded-2xl bg-amber-400/15 border border-amber-400/40 px-4 py-3 landscape:py-2">
           <div className="text-amber-300 text-xs font-bold leading-snug mb-2">
             {timer.periodEndTs > timer.targetEndTs ? 'Running behind schedule' : 'Running ahead of schedule'} — at this pace you'll finish around{' '}
             {new Date(timer.periodEndTs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} instead of{' '}
@@ -1217,8 +1217,8 @@ function TimerBar({ globalTimer }) {
         </div>
       )}
 
-      <div className="flex items-center justify-between mt-1.5 gap-2">
-        <div className="text-white/30 text-xs font-semibold flex items-center gap-1 py-1 px-2 truncate">
+      <div className="flex items-center justify-between mt-1.5 landscape:mt-0.5 gap-2">
+        <div className="text-white/30 text-xs font-semibold flex items-center gap-1 py-1 landscape:py-0.5 px-2 truncate">
           <Icon name="Clock" size={12} /> {timer.endLabel} · hold clock to adjust
         </div>
         {timer.mode === 'auto' && !!timer.targetEndTs && (
@@ -1260,10 +1260,10 @@ function LiveClock({ className }) {
 
 function Header({ title, onBack, onSettings }) {
   return (
-    <div className="flex items-center justify-between mb-4">
+    <div className="flex items-center justify-between mb-4 landscape:mb-1 landscape:py-1 landscape:px-3">
       <div className="flex items-center gap-2">
         {onBack && <IconButton name="ChevronLeft" onClick={onBack} label="Back" />}
-        <h1 className="text-2xl font-extrabold tracking-tight">{title}</h1>
+        <h1 className="text-2xl landscape:text-lg font-extrabold tracking-tight">{title}</h1>
       </div>
       <div className="flex items-center gap-2">
         <LiveClock className="text-white/40 text-sm font-bold tabular mr-1" />
@@ -1281,19 +1281,19 @@ function ScoreHalf({ name, score, onScore, onUndo, footer, scoreClassName = 'tex
     <button
       onClick={() => { if (locked) { vibrate(15); return; } onScore(); }}
       aria-disabled={locked}
-      className={`btn-press flex-1 rounded-3xl ${c.bg} border-2 ${c.border} flex flex-col items-center justify-center gap-2 relative overflow-hidden py-4 px-4 ${locked ? 'opacity-40 saturate-[.4]' : ''}`}
+      className={`btn-press flex-1 rounded-3xl ${c.bg} border-2 ${c.border} flex flex-col items-center justify-center gap-2 landscape:gap-1 relative overflow-hidden py-4 landscape:py-2 px-4 landscape:px-3 landscape:h-full landscape:min-h-0 ${locked ? 'opacity-40 saturate-[.4]' : ''}`}
     >
       <div className={`${c.sub} text-xs font-extrabold tracking-widest self-start flex items-center gap-1`}>
         {locked && <Icon name="Lock" size={11} />}
         {locked ? 'FIELDING · LOCKED' : 'TAP TO SCORE'}
       </div>
-      <div className={`text-lg font-bold ${c.text} opacity-70 text-center truncate max-w-full`}>{name}</div>
-      <div className={`${scoreClassName} font-black tabular ${c.text}`}>{score}</div>
+      <div className={`text-lg landscape:text-sm font-bold ${c.text} opacity-70 text-center truncate max-w-full`}>{name}</div>
+      <div className={`${scoreClassName} landscape:text-4xl font-black tabular ${c.text}`}>{score}</div>
       {footer}
       <div
         role="button"
         onClick={(e) => { e.stopPropagation(); onUndo(); }}
-        className={`btn-press absolute bottom-3 right-3 w-11 h-11 rounded-full ${c.overlay} ${c.text} flex items-center justify-center`}
+        className={`btn-press absolute bottom-3 landscape:bottom-1.5 right-3 landscape:right-1.5 w-11 h-11 landscape:w-9 landscape:h-9 rounded-full ${c.overlay} ${c.text} flex items-center justify-center`}
       >
         <Icon name="Minus" size={18} />
       </div>
@@ -1657,8 +1657,8 @@ function VolleyballSetTracker({ vb, teamADisplay, teamBDisplay, onAdvanceSet, on
   const isLive = vb.set === vb.liveSet;
 
   return (
-    <div className="rounded-2xl bg-zinc-900 border border-white/10 p-4 mb-4">
-      <div className="grid grid-cols-3 gap-2 mb-3">
+    <div className="rounded-2xl bg-zinc-900 border border-white/10 p-4 landscape:p-2 mb-4 landscape:mb-2 shrink-0">
+      <div className="grid grid-cols-3 gap-2 mb-3 landscape:mb-1.5">
         {[1, 2, 3].map((n) => {
           const entry = setHistory[n - 1];
           const isLiveSlot = vb.liveSet === n;
@@ -1670,7 +1670,7 @@ function VolleyballSetTracker({ vb, teamADisplay, teamBDisplay, onAdvanceSet, on
               type="button"
               disabled={!reachable}
               onClick={() => onViewSet(n)}
-              className={`btn-press rounded-xl py-3 text-center border ${
+              className={`btn-press rounded-xl py-3 landscape:py-1.5 text-center border ${
                 isViewing ? 'border-emerald-400 bg-emerald-400/10' : 'border-white/10 bg-white/5'
               } ${!reachable ? 'opacity-30' : ''}`}
             >
@@ -1846,27 +1846,27 @@ function Volleyball({ globalTimer, onBack }) {
   }
 
   return (
-    <div className="px-5 pt-6 pb-8 max-w-md mx-auto flex flex-col min-h-[100dvh]">
+    <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:h-dvh landscape:min-h-0">
       <EndGamePill onClick={() => setEndGameOpen(true)} />
       <Header title="Volleyball" onBack={onBack} onSettings={() => setSettingsOpen(true)} />
 
       <VolleyballSetTracker vb={vb} teamADisplay={teamADisplay} teamBDisplay={teamBDisplay} onAdvanceSet={advanceSet} onViewSet={viewSet} />
 
-      <div className="flex items-center justify-end mb-2 px-1">
+      <div className="flex items-center justify-end mb-2 landscape:mb-1 px-1 shrink-0">
         <div className="text-white/40 text-xs font-extrabold tracking-widest">STREAK {vb.streak}</div>
       </div>
 
       {setWinnerName ? (
-        <div className="mb-3 rounded-2xl bg-emerald-400 text-black text-center py-2.5 font-extrabold text-sm tracking-widest animate-pulse-fast">
+        <div className="mb-3 landscape:mb-1.5 rounded-2xl bg-emerald-400 text-black text-center py-2.5 landscape:py-1.5 font-extrabold text-sm tracking-widest animate-pulse-fast shrink-0">
           {setWinnerName.toUpperCase()} WINS THE SET
         </div>
       ) : bannerText && (
-        <div className="mb-3 rounded-2xl bg-yellow-400 text-black text-center py-2.5 font-extrabold text-sm tracking-widest animate-pulse-fast">
+        <div className="mb-3 landscape:mb-1.5 rounded-2xl bg-yellow-400 text-black text-center py-2.5 landscape:py-1.5 font-extrabold text-sm tracking-widest animate-pulse-fast shrink-0">
           {bannerText}
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 mb-4 flex-1">
+      <div className="grid grid-cols-2 gap-3 landscape:gap-2 mb-4 landscape:mb-2 flex-1 landscape:min-h-0">
         {['A', 'B'].map((team) => {
           const serving = isLive && vb.serving === team;
           const name = team === 'A' ? viewTeamAName : viewTeamBName;
@@ -1877,22 +1877,22 @@ function Volleyball({ globalTimer, onBack }) {
             <button
               key={team}
               onClick={() => tapTeam(team)}
-              className={`btn-press rounded-3xl flex flex-col items-center justify-center py-8 gap-2 transition-colors ${c.bg} ${
+              className={`btn-press rounded-3xl flex flex-col items-center justify-center py-8 landscape:py-2 gap-2 landscape:gap-1 transition-colors ${c.bg} ${
                 serving ? 'border-4 border-emerald-400 ring-4 ring-emerald-400/40' : `border-2 ${c.border}`
               }`}
             >
               {serving && (
-                <div className="flex items-center gap-1 text-emerald-400 text-xs font-extrabold tracking-widest mb-1">
+                <div className="flex items-center gap-1 text-emerald-400 text-xs font-extrabold tracking-widest mb-1 landscape:mb-0">
                   <Icon name="CircleDot" size={12} /> SERVING
                 </div>
               )}
-              <div className={`text-lg font-bold ${c.text} opacity-70 truncate max-w-full px-2`}>{name}</div>
-              <div className={`text-7xl font-black tabular ${c.text}`}>{score}</div>
+              <div className={`text-lg landscape:text-sm font-bold ${c.text} opacity-70 truncate max-w-full px-2`}>{name}</div>
+              <div className={`text-7xl landscape:text-5xl font-black tabular ${c.text}`}>{score}</div>
               {isLive && (
                 <div
                   role="button"
                   onClick={(e) => { e.stopPropagation(); undo(team); }}
-                  className={`btn-press mt-2 w-10 h-10 rounded-full ${c.overlay} ${c.text} flex items-center justify-center`}
+                  className={`btn-press mt-2 landscape:mt-1 w-10 h-10 landscape:w-8 landscape:h-8 rounded-full ${c.overlay} ${c.text} flex items-center justify-center`}
                 >
                   <Icon name="Minus" size={16} />
                 </div>
@@ -1903,12 +1903,12 @@ function Volleyball({ globalTimer, onBack }) {
       </div>
 
       {isLive ? (
-        <div className="grid grid-cols-2 gap-3">
-          <BigButton onClick={sideOut} className="rounded-3xl bg-red-500/15 border-2 border-red-500 py-7 text-red-400 font-extrabold text-xl flex flex-col items-center gap-1">
+        <div className="grid grid-cols-2 gap-3 landscape:gap-2 shrink-0">
+          <BigButton onClick={sideOut} className="rounded-3xl bg-red-500/15 border-2 border-red-500 py-7 landscape:py-3 text-red-400 font-extrabold text-xl landscape:text-base flex flex-col landscape:flex-row items-center gap-1 landscape:gap-2 justify-center">
             <Icon name="ArrowLeftRight" size={26} />
             Side Out
           </BigButton>
-          <BigButton onClick={point} className="rounded-3xl bg-emerald-400 py-7 text-black font-extrabold text-xl flex flex-col items-center gap-1">
+          <BigButton onClick={point} className="rounded-3xl bg-emerald-400 py-7 landscape:py-3 text-black font-extrabold text-xl landscape:text-base flex flex-col landscape:flex-row items-center gap-1 landscape:gap-2 justify-center">
             <Icon name="Plus" size={26} />
             Point
           </BigButton>
@@ -1916,7 +1916,7 @@ function Volleyball({ globalTimer, onBack }) {
       ) : (
         <BigButton
           onClick={() => viewSet(vb.liveSet)}
-          className="rounded-3xl bg-white/10 border-2 border-white/20 py-6 text-white font-extrabold text-base flex items-center justify-center gap-2"
+          className="rounded-3xl bg-white/10 border-2 border-white/20 py-6 landscape:py-3 text-white font-extrabold text-base flex items-center justify-center gap-2 shrink-0"
         >
           <Icon name="ArrowLeft" size={18} />
           Viewing Set {vb.set} (Final) · Tap to Return to Live Set
@@ -2066,17 +2066,17 @@ function Football({ globalTimer, onBack }) {
     const dotFill = light ? 'bg-black border-black' : 'bg-white border-white';
     const dotEmpty = light ? 'border-black/30' : 'border-white/30';
     return (
-      <div className="w-full mt-1 px-1 flex justify-start">
-        <div className="flex items-center gap-0.5 rounded-2xl bg-black/20 pl-2.5 pr-1 py-1">
+      <div className="w-full mt-1 landscape:mt-0.5 px-1 flex justify-start">
+        <div className="flex items-center gap-0.5 rounded-2xl bg-black/20 pl-2.5 pr-1 py-1 landscape:py-0.5">
           <span className={`text-[9px] font-bold ${c.sub} tracking-widest mr-1`}>TO</span>
           {Array.from({ length: fb.timeoutCount }).map((_, i) => (
             <button
               key={i}
               type="button"
               onClick={(e) => { e.stopPropagation(); i < remaining ? useTimeout(team) : restoreTimeout(team); }}
-              className="btn-press flex items-center justify-center w-8 h-8 shrink-0"
+              className="btn-press flex items-center justify-center w-8 h-8 landscape:w-6 landscape:h-6 shrink-0"
             >
-              <span className={`block w-4 h-4 rounded-full border ${i < remaining ? dotFill : `${dotEmpty} bg-transparent`}`} />
+              <span className={`block w-4 h-4 landscape:w-3 landscape:h-3 rounded-full border ${i < remaining ? dotFill : `${dotEmpty} bg-transparent`}`} />
             </button>
           ))}
         </div>
@@ -2085,12 +2085,12 @@ function Football({ globalTimer, onBack }) {
   };
 
   return (
-    <div className="px-5 pt-6 pb-8 max-w-md mx-auto flex flex-col min-h-[100dvh]">
+    <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:h-dvh landscape:min-h-0">
       <EndGamePill onClick={() => setEndGameOpen(true)} />
       <Header title="Football" onBack={onBack} onSettings={() => setSettingsOpen(true)} />
       <TimerBar globalTimer={globalTimer} />
 
-      <div className="flex flex-col gap-3 flex-1 mb-4" style={{ minHeight: '48vh' }}>
+      <div className="flex flex-col landscape:flex-row gap-3 landscape:gap-2 flex-1 mb-4 landscape:mb-2 landscape:min-h-0" style={{ minHeight: '48vh' }}>
         <ScoreHalf
           name={displayTeamName(fb.teamA, 'A')}
           score={fb.scoreA}
@@ -2111,11 +2111,11 @@ function Football({ globalTimer, onBack }) {
         />
       </div>
 
-      <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 px-5 flex items-center justify-between">
+      <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 landscape:py-2 px-5 flex items-center justify-between shrink-0">
         <IconButton name="ChevronLeft" onClick={() => changeHalf(-1)} label="Previous half" />
         <div className="text-center">
           <div className="text-xs font-extrabold tracking-widest text-white/40">HALF</div>
-          <div className="text-3xl font-black tabular">
+          <div className="text-3xl landscape:text-xl font-black tabular">
             {fb.half}
             <span className="text-white/30 text-lg">/2</span>
           </div>
@@ -2294,10 +2294,10 @@ function Universal({ sport, globalTimer, onBack }) {
   const resetCount = () => setG((s) => ({ ...s, balls: 0, strikes: 0 }));
 
   return (
-    <div className="px-5 pt-6 pb-8 max-w-md mx-auto flex flex-col min-h-[100dvh]">
+    <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:h-dvh landscape:min-h-0">
       {banner && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 pointer-events-none">
-          <div className={`pop-in rounded-3xl px-10 py-8 text-4xl font-black tracking-wide text-center shadow-2xl ${AT_BAT_BANNER_STYLES[banner] || 'bg-white text-black'}`}>
+          <div className={`pop-in rounded-3xl px-10 landscape:px-6 py-8 landscape:py-4 text-4xl landscape:text-2xl font-black tracking-wide text-center shadow-2xl ${AT_BAT_BANNER_STYLES[banner] || 'bg-white text-black'}`}>
             {banner}
           </div>
         </div>
@@ -2306,7 +2306,7 @@ function Universal({ sport, globalTimer, onBack }) {
       <Header title={cfg.title} onBack={onBack} onSettings={() => setSettingsOpen(true)} />
       {sport !== 'baseball' && <TimerBar globalTimer={globalTimer} />}
 
-      <div className="flex flex-col gap-3 flex-1 mb-4" style={{ minHeight: '48vh' }}>
+      <div className="flex flex-col landscape:flex-row gap-3 landscape:gap-2 flex-1 mb-4 landscape:mb-2 landscape:min-h-0" style={{ minHeight: '48vh' }}>
         <ScoreHalf
           name={displayTeamName(g.teamA, 'A')}
           score={g.scoreA}
@@ -2325,11 +2325,11 @@ function Universal({ sport, globalTimer, onBack }) {
         />
       </div>
 
-      <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 px-5 flex items-center justify-between">
+      <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 landscape:py-2 px-5 flex items-center justify-between shrink-0">
         <IconButton name="ChevronLeft" onClick={() => changePeriod(-1)} label="Previous period" />
         <div className="text-center">
           <div className="text-xs font-extrabold tracking-widest text-white/40">{cfg.unit.toUpperCase()}</div>
-          <div className="text-3xl font-black tabular">
+          <div className="text-3xl landscape:text-xl font-black tabular">
             {g.period}
             <span className="text-white/30 text-lg">/{cfg.maxUnit}</span>
           </div>
@@ -2340,49 +2340,49 @@ function Universal({ sport, globalTimer, onBack }) {
       {sport === 'baseball' && (
         <button
           onClick={toggleHalf}
-          className="btn-press w-full mt-3 rounded-2xl bg-zinc-900 border-2 border-white/10 py-5 px-5 flex items-center justify-center gap-2 active:bg-white/10"
+          className="btn-press w-full mt-3 landscape:mt-1.5 rounded-2xl bg-zinc-900 border-2 border-white/10 py-5 landscape:py-2 px-5 flex items-center justify-center gap-2 active:bg-white/10 shrink-0"
         >
           <Icon name="ArrowLeftRight" size={20} className="text-white/40" />
-          <span className="text-lg font-extrabold tracking-wide">
+          <span className="text-lg landscape:text-sm font-extrabold tracking-wide">
             {g.half.toUpperCase()} &middot; {battingTeamName} BATTING
           </span>
         </button>
       )}
 
       {sport === 'baseball' && (
-        <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 px-4 mt-3">
-          <div className="grid grid-cols-3 gap-2 mb-4">
+        <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 landscape:py-2 px-4 mt-3 landscape:mt-1.5 shrink-0">
+          <div className="grid grid-cols-3 gap-2 mb-4 landscape:mb-2">
             {[
               { key: 'balls', label: 'BALLS (B)', count: g.balls || 0, max: 4, dot: 'bg-emerald-400 border-emerald-400' },
               { key: 'strikes', label: 'STRIKES (S)', count: g.strikes || 0, max: 3, dot: 'bg-yellow-400 border-yellow-400' },
               { key: 'outs', label: 'OUTS (O)', count: g.outs || 0, max: 3, dot: 'bg-red-500 border-red-500' },
             ].map((c) => (
-              <div key={c.key} className="flex flex-col items-center gap-2">
+              <div key={c.key} className="flex flex-col items-center gap-2 landscape:gap-1">
                 <div className="text-[9px] font-extrabold tracking-widest text-white/40 text-center">{c.label}</div>
-                <div className="flex gap-1.5">
+                <div className="flex gap-1.5 landscape:gap-1">
                   {Array.from({ length: c.max }).map((_, i) => (
-                    <div key={i} className={`w-4 h-4 rounded-full border-2 ${i < c.count ? c.dot : 'border-white/25 bg-transparent'}`} />
+                    <div key={i} className={`w-4 h-4 landscape:w-3 landscape:h-3 rounded-full border-2 ${i < c.count ? c.dot : 'border-white/25 bg-transparent'}`} />
                   ))}
                 </div>
               </div>
             ))}
           </div>
 
-          <div className="grid grid-cols-3 gap-2 mb-2">
-            <BigButton onClick={addBall} className="rounded-2xl bg-emerald-400/15 border-2 border-emerald-400/40 text-emerald-400 py-5 font-extrabold text-sm">
+          <div className="grid grid-cols-3 gap-2 mb-2 landscape:mb-1.5">
+            <BigButton onClick={addBall} className="rounded-2xl bg-emerald-400/15 border-2 border-emerald-400/40 text-emerald-400 py-5 landscape:py-2.5 font-extrabold text-sm">
               +BALL
             </BigButton>
-            <BigButton onClick={addStrike} className="rounded-2xl bg-yellow-400/15 border-2 border-yellow-400/40 text-yellow-400 py-5 font-extrabold text-sm">
+            <BigButton onClick={addStrike} className="rounded-2xl bg-yellow-400/15 border-2 border-yellow-400/40 text-yellow-400 py-5 landscape:py-2.5 font-extrabold text-sm">
               +STRIKE
             </BigButton>
-            <BigButton onClick={addOut} className="rounded-2xl bg-red-500/15 border-2 border-red-500/40 text-red-400 py-5 font-extrabold text-sm">
+            <BigButton onClick={addOut} className="rounded-2xl bg-red-500/15 border-2 border-red-500/40 text-red-400 py-5 landscape:py-2.5 font-extrabold text-sm">
               +OUT
             </BigButton>
           </div>
 
           <BigButton
             onClick={resetCount}
-            className="w-full rounded-xl bg-white/5 border border-white/10 py-2.5 text-white/40 font-bold text-xs flex items-center justify-center gap-1.5"
+            className="w-full rounded-xl bg-white/5 border border-white/10 py-2.5 landscape:py-1.5 text-white/40 font-bold text-xs flex items-center justify-center gap-1.5"
           >
             <Icon name="RotateCcw" size={12} /> RESET COUNT
           </BigButton>
@@ -2650,12 +2650,12 @@ function Basketball({ globalTimer, onBack }) {
     const color = team === 'A' ? bk.colorA : bk.colorB;
     const c = teamColorClasses(color);
     return (
-      <div className={`relative flex-1 rounded-3xl ${c.bg} border-2 ${c.border} flex flex-col items-center justify-center gap-3 py-4 px-3`}>
+      <div className={`relative flex-1 rounded-3xl ${c.bg} border-2 ${c.border} flex flex-col items-center justify-center gap-3 landscape:gap-1.5 py-4 landscape:py-2 px-3 landscape:h-full landscape:min-h-0`}>
         <div
           role="button"
           onClick={() => undo(team)}
           aria-label={`Subtract 1 from ${name}`}
-          className={`btn-press absolute top-3 left-3 w-10 h-10 rounded-full ${c.overlay} ${c.text} flex items-center justify-center`}
+          className={`btn-press absolute top-3 landscape:top-1.5 left-3 w-10 h-10 landscape:w-8 landscape:h-8 rounded-full ${c.overlay} ${c.text} flex items-center justify-center`}
         >
           <Icon name="Minus" size={16} />
         </div>
@@ -2663,21 +2663,21 @@ function Basketball({ globalTimer, onBack }) {
           role="button"
           onClick={(e) => { e.stopPropagation(); setHistoryOpen(true); }}
           aria-label="Show scoring history"
-          className={`btn-press absolute top-3 right-3 w-10 h-10 rounded-full ${c.overlay} ${c.text} flex items-center justify-center`}
+          className={`btn-press absolute top-3 landscape:top-1.5 right-3 w-10 h-10 landscape:w-8 landscape:h-8 rounded-full ${c.overlay} ${c.text} flex items-center justify-center`}
         >
           <Icon name="Clock" size={16} />
         </div>
-        <div className={`text-lg font-bold ${c.text} opacity-70 truncate max-w-full`}>{name}</div>
-        <div className={`text-7xl font-black tabular ${c.text}`}>{score}</div>
-        <div className="grid grid-cols-3 gap-2 w-full">
-          <BigButton onClick={() => addScore(team, 1)} className={`relative rounded-2xl ${c.overlay} ${c.text} py-5 font-extrabold text-lg flex items-center justify-center`}>
+        <div className={`text-lg landscape:text-sm font-bold ${c.text} opacity-70 truncate max-w-full`}>{name}</div>
+        <div className={`text-7xl landscape:text-5xl font-black tabular ${c.text}`}>{score}</div>
+        <div className="grid grid-cols-3 landscape:flex landscape:flex-row gap-2 landscape:gap-1.5 w-full">
+          <BigButton onClick={() => addScore(team, 1)} className={`relative rounded-2xl ${c.overlay} ${c.text} py-5 landscape:py-3 font-extrabold text-lg landscape:text-base flex-1 flex items-center justify-center`}>
             <span>+1</span>
-            <span className={`absolute bottom-1.5 text-[9px] font-bold ${c.sub} tracking-widest`}>FT</span>
+            <span className={`absolute bottom-1.5 landscape:bottom-0.5 text-[9px] font-bold ${c.sub} tracking-widest`}>FT</span>
           </BigButton>
-          <BigButton onClick={() => addScore(team, 2)} className={`rounded-2xl ${c.overlay} ${c.text} py-5 font-extrabold text-lg flex items-center justify-center`}>
+          <BigButton onClick={() => addScore(team, 2)} className={`rounded-2xl ${c.overlay} ${c.text} py-5 landscape:py-3 font-extrabold text-lg landscape:text-base flex-1 flex items-center justify-center`}>
             +2
           </BigButton>
-          <BigButton onClick={() => addScore(team, 3)} className={`rounded-2xl ${c.overlay} ${c.text} border-2 border-white/30 py-5 font-extrabold text-lg flex items-center justify-center`}>
+          <BigButton onClick={() => addScore(team, 3)} className={`rounded-2xl ${c.overlay} ${c.text} border-2 border-white/30 py-5 landscape:py-3 font-extrabold text-lg landscape:text-base flex-1 flex items-center justify-center`}>
             +3
           </BigButton>
         </div>
@@ -2700,7 +2700,7 @@ function Basketball({ globalTimer, onBack }) {
     : [{ value: 1, label: '1st Half' }, { value: 2, label: '2nd Half' }];
 
   return (
-    <div className="px-5 pt-6 pb-8 max-w-md mx-auto flex flex-col min-h-[100dvh]">
+    <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:h-dvh landscape:min-h-0">
       <EndGamePill onClick={() => setEndGameOpen(true)} />
 
       <BasketballHistoryPanel
@@ -2714,13 +2714,13 @@ function Basketball({ globalTimer, onBack }) {
       <Header title="Basketball" onBack={onBack} onSettings={() => setSettingsOpen(true)} />
       <TimerBar globalTimer={globalTimer} />
 
-      <div className="flex flex-col gap-3 flex-1 mb-4">
+      <div className="flex flex-col landscape:flex-row gap-3 landscape:gap-2 flex-1 mb-4 landscape:mb-2 landscape:min-h-0">
         <TeamSide team="A" />
         <TeamSide team="B" />
       </div>
 
-      <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 px-5 mb-3">
-        <div className="text-xs font-extrabold tracking-widest text-white/40 text-center mb-2">
+      <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 landscape:py-2 px-5 mb-3 landscape:mb-1.5 shrink-0">
+        <div className="text-xs font-extrabold tracking-widest text-white/40 text-center mb-2 landscape:mb-1">
           {bk.periodMode === 'quarters' ? 'QUARTER' : 'HALF'}
         </div>
         <Segmented options={periodOptions} value={bk.half} onChange={setHalf} />
@@ -2729,7 +2729,7 @@ function Basketball({ globalTimer, onBack }) {
       <BigButton
         onClick={undoLast}
         disabled={!lastAction}
-        className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white/80 flex items-center justify-center gap-2"
+        className="w-full rounded-2xl bg-white/10 py-4 landscape:py-2 font-bold text-white/80 flex items-center justify-center gap-2 shrink-0"
       >
         <Icon name="RotateCcw" size={18} />
         {lastAction ? `Undo +${lastAction.pts} · ${displayTeamName(lastAction.team === 'A' ? bk.teamA : bk.teamB, lastAction.team)}` : 'Undo Last Score'}
