@@ -3,7 +3,7 @@ import Icon from './components/Icon.jsx';
 import IconButton from './components/IconButton.jsx';
 import Sheet from './components/Sheet.jsx';
 
-const APP_VERSION = '3.1.4';
+const APP_VERSION = '3.1.5';
 
 
 
@@ -1659,6 +1659,10 @@ function Volleyball({ globalTimer, onBack }) {
       colorB: s.colorB,
       scoreA: s.scoreA,
       scoreB: s.scoreB,
+      serving: s.serving,
+      streak: s.streak,
+      usedPointServeA: s.usedPointServeA,
+      usedPointServeB: s.usedPointServeB,
     };
     const nextSet = Math.min(3, s.set + 1);
     return {
@@ -1675,6 +1679,30 @@ function Volleyball({ globalTimer, onBack }) {
   });
 
   const viewSet = (n) => setVb((s) => ({ ...s, set: Math.max(1, Math.min(s.liveSet, n)) }));
+
+  // Undoes an accidental "Next Set": only valid while viewing the set that was
+  // just finalized (the one directly before the current live set), since that's
+  // the only history entry that can be restored without losing progress made
+  // in a newer live set.
+  const continueEditingSet = () => setVb((s) => {
+    if (s.set !== s.liveSet - 1) return s;
+    const entry = (s.setHistory || [])[s.set - 1];
+    if (!entry) return s;
+    const setHistory = [...s.setHistory];
+    setHistory[s.set - 1] = undefined;
+    return {
+      ...s,
+      teamA: s.teamB, teamB: s.teamA,
+      colorA: s.colorB, colorB: s.colorA,
+      scoreA: entry.scoreA, scoreB: entry.scoreB,
+      serving: entry.serving ?? s.serving,
+      streak: entry.streak ?? 0,
+      usedPointServeA: entry.usedPointServeA ?? false,
+      usedPointServeB: entry.usedPointServeB ?? false,
+      liveSet: s.set,
+      setHistory,
+    };
+  });
 
   const switchSides = () => setVb((s) => ({
     ...s,
@@ -1805,6 +1833,23 @@ function Volleyball({ globalTimer, onBack }) {
           <BigButton onClick={point} className="rounded-3xl bg-emerald-400 py-7 landscape:py-3 text-black font-extrabold text-xl landscape:text-base flex flex-col landscape:flex-row items-center gap-1 landscape:gap-2 justify-center">
             <Icon name="Plus" size={26} />
             Point
+          </BigButton>
+        </div>
+      ) : vb.set === vb.liveSet - 1 ? (
+        <div className="flex gap-2 shrink-0">
+          <BigButton
+            onClick={() => viewSet(vb.liveSet)}
+            className="basis-[70%] grow rounded-3xl bg-white/10 border-2 border-white/20 py-6 landscape:py-3 text-white font-extrabold text-sm flex items-center justify-center gap-2"
+          >
+            <Icon name="ArrowLeft" size={18} />
+            Set {vb.set} (Final) · Return to Live
+          </BigButton>
+          <BigButton
+            onClick={continueEditingSet}
+            className="basis-[30%] grow rounded-3xl bg-yellow-400/15 border-2 border-yellow-400 py-6 landscape:py-3 text-yellow-400 font-extrabold text-xs flex flex-col items-center justify-center gap-1"
+          >
+            <Icon name="RotateCcw" size={18} />
+            Continue Set
           </BigButton>
         </div>
       ) : (
