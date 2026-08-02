@@ -3,7 +3,7 @@ import Icon from './components/Icon.jsx';
 import IconButton from './components/IconButton.jsx';
 import Sheet from './components/Sheet.jsx';
 
-const APP_VERSION = '3.2.0';
+const APP_VERSION = '3.2.1';
 
 
 
@@ -60,8 +60,21 @@ const DEFAULT_SCHEDULE_SLOTS = [
   { key: '4th', pill: '4th Activity', label: 'Fourth Activity', startHour: 19, startMinute: 30, endHour: 20, endMinute: 20 },
 ];
 
+// Friday runs a shorter, earlier slate (early Shabbos prep) — only three
+// activities, each 50 minutes with the same 10-minute buffer between them
+// as the weekday default, so the wrap-up grace window in detectCurrentActivity
+// never bleeds an End Game message into the next slot.
+const DEFAULT_FRIDAY_SLOTS = [
+  { key: 'fri_1st', pill: '1st Activity', label: 'First Activity', startHour: 14, startMinute: 30, endHour: 15, endMinute: 20 },
+  { key: 'fri_2nd', pill: '2nd Activity', label: 'Second Activity', startHour: 15, startMinute: 30, endHour: 16, endMinute: 20 },
+  { key: 'fri_3rd', pill: '3rd Activity', label: 'Third Activity', startHour: 16, startMinute: 30, endHour: 17, endMinute: 20 },
+];
+
 function defaultSchedule() {
-  return { default: DEFAULT_SCHEDULE_SLOTS.map((s) => ({ ...s })), overrides: {} };
+  return {
+    default: DEFAULT_SCHEDULE_SLOTS.map((s) => ({ ...s })),
+    overrides: { fri: DEFAULT_FRIDAY_SLOTS.map((s) => ({ ...s })) },
+  };
 }
 
 const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -1384,36 +1397,40 @@ function parseTimeInputValue(v) {
 
 function SlotEditorRow({ slot, onChange, onRemove }) {
   return (
-    <div className="flex items-center gap-2 mb-2">
-      <input
-        type="text"
-        value={slot.label}
-        onChange={(e) => onChange({ ...slot, label: e.target.value, pill: e.target.value })}
-        placeholder="Activity name"
-        maxLength={30}
-        className="flex-1 min-w-0 rounded-lg bg-white/10 border border-white/10 px-3 py-2.5 text-sm font-bold text-white outline-none focus:border-emerald-400/60"
-      />
-      <input
-        type="time"
-        value={timeInputValue(slot.startHour, slot.startMinute)}
-        onChange={(e) => { const { h, m } = parseTimeInputValue(e.target.value); onChange({ ...slot, startHour: h, startMinute: m }); }}
-        className="shrink-0 rounded-lg bg-white/10 border border-white/10 px-2 py-2.5 text-sm font-bold text-white outline-none focus:border-emerald-400/60 tabular"
-      />
-      <span className="text-white/30 text-xs shrink-0">–</span>
-      <input
-        type="time"
-        value={timeInputValue(slot.endHour, slot.endMinute)}
-        onChange={(e) => { const { h, m } = parseTimeInputValue(e.target.value); onChange({ ...slot, endHour: h, endMinute: m }); }}
-        className="shrink-0 rounded-lg bg-white/10 border border-white/10 px-2 py-2.5 text-sm font-bold text-white outline-none focus:border-emerald-400/60 tabular"
-      />
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label="Remove activity"
-        className="btn-press shrink-0 w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center text-red-400"
-      >
-        <Icon name="Trash2" size={14} />
-      </button>
+    <div className="rounded-xl bg-white/5 border border-white/10 p-2.5 mb-2">
+      <div className="flex items-center gap-2 mb-2">
+        <input
+          type="text"
+          value={slot.label}
+          onChange={(e) => onChange({ ...slot, label: e.target.value, pill: e.target.value })}
+          placeholder="Activity name"
+          maxLength={30}
+          className="flex-1 min-w-0 rounded-lg bg-white/10 border border-white/10 px-3 py-2.5 text-sm font-bold text-white outline-none focus:border-emerald-400/60"
+        />
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label="Remove activity"
+          className="btn-press shrink-0 w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center text-red-400"
+        >
+          <Icon name="Trash2" size={14} />
+        </button>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="time"
+          value={timeInputValue(slot.startHour, slot.startMinute)}
+          onChange={(e) => { const { h, m } = parseTimeInputValue(e.target.value); onChange({ ...slot, startHour: h, startMinute: m }); }}
+          className="flex-1 min-w-0 rounded-lg bg-white/10 border border-white/10 px-2 py-2.5 text-sm font-bold text-white outline-none focus:border-emerald-400/60 tabular"
+        />
+        <span className="text-white/30 text-xs shrink-0">–</span>
+        <input
+          type="time"
+          value={timeInputValue(slot.endHour, slot.endMinute)}
+          onChange={(e) => { const { h, m } = parseTimeInputValue(e.target.value); onChange({ ...slot, endHour: h, endMinute: m }); }}
+          className="flex-1 min-w-0 rounded-lg bg-white/10 border border-white/10 px-2 py-2.5 text-sm font-bold text-white outline-none focus:border-emerald-400/60 tabular"
+        />
+      </div>
     </div>
   );
 }
