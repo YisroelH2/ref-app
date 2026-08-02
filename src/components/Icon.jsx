@@ -1,23 +1,23 @@
 import {
-  ArrowLeft, ArrowLeftRight, Check, ChevronLeft, ChevronRight, CircleDot,
+  ArrowLeft, ArrowLeftRight, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleDot,
   Clock, Copy, Flag, Lock, Minus, Pause, Play, Plus, Repeat, RotateCcw, RotateCw,
-  Send, Settings, Volume2, X,
+  Send, Settings, Trash2, Volume2, X,
 } from 'lucide-react';
 
 // Only the icons this app actually uses are imported by name above, so the
 // bundle doesn't pull in the entire lucide-react icon set (~1000 components).
 const ICONS = {
-  ArrowLeft, ArrowLeftRight, Check, ChevronLeft, ChevronRight, CircleDot,
+  ArrowLeft, ArrowLeftRight, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleDot,
   Clock, Copy, Flag, Lock, Minus, Pause, Play, Plus, Repeat, RotateCcw, RotateCw,
-  Send, Settings, Volume2, X,
+  Send, Settings, Trash2, Volume2, X,
 };
 
 // Fallback glyphs in case a name above is ever a typo or gets removed.
 const ICON_FALLBACK = {
   Pause: '⏸', Play: '▶', Settings: '⚙', Plus: '+', Minus: '−', RotateCcw: '↺',
-  X: '✕', Check: '✓', ChevronLeft: '‹', ChevronRight: '›', Clock: '🕐',
+  X: '✕', Check: '✓', ChevronLeft: '‹', ChevronRight: '›', ChevronUp: '˄', ChevronDown: '˅', Clock: '🕐',
   Flag: '⚑', ArrowLeftRight: '⇄', Volume2: '🔔', RotateCw: '↻', CircleDot: '●',
-  Copy: '📋', Send: '➤', Lock: '🔒', ArrowLeft: '←', Repeat: '⟳',
+  Copy: '📋', Send: '➤', Lock: '🔒', ArrowLeft: '←', Repeat: '⟳', Trash2: '🗑',
 };
 
 export default function Icon({ name, size = 24, className = '', strokeWidth = 2.5 }) {

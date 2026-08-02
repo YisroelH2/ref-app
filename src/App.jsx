@@ -3,7 +3,7 @@ import Icon from './components/Icon.jsx';
 import IconButton from './components/IconButton.jsx';
 import Sheet from './components/Sheet.jsx';
 
-const APP_VERSION = '3.1.5';
+const APP_VERSION = '3.2.0';
 
 
 
@@ -49,12 +49,37 @@ function resolveClosestHour24(hour12, minute) {
 
 /* ============================== CAMP SCHEDULE ============================== */
 
-const CAMP_SCHEDULE = [
+// The stock YKP activity blocks — used to seed a fresh device's schedule and
+// as the "Reset to YKP Defaults" target in the schedule editor. Actual live
+// behavior always reads from settings.schedule (see getDaySlots below), so
+// editing this only changes what new devices start with.
+const DEFAULT_SCHEDULE_SLOTS = [
   { key: '1st', pill: '1st Activity', label: 'First Activity', startHour: 15, startMinute: 0, endHour: 16, endMinute: 0 },
   { key: '2nd', pill: '2nd Activity', label: 'Second Activity', startHour: 16, startMinute: 10, endHour: 17, endMinute: 10 },
   { key: '3rd', pill: '3rd Activity', label: 'Third Activity', startHour: 17, startMinute: 20, endHour: 18, endMinute: 20 },
   { key: '4th', pill: '4th Activity', label: 'Fourth Activity', startHour: 19, startMinute: 30, endHour: 20, endMinute: 20 },
 ];
+
+function defaultSchedule() {
+  return { default: DEFAULT_SCHEDULE_SLOTS.map((s) => ({ ...s })), overrides: {} };
+}
+
+const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const DAY_LABELS = { sun: 'Sunday', mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday' };
+
+// Resolves which list of activity slots is in effect for a given date: a
+// day-of-week override (e.g. Friday running on a different clock) if one is
+// set, otherwise the schedule's default. This is the single place that knows
+// how to read a `settings.schedule` object — everything else (auto-detect,
+// the Game Clock presets, the End Game period picker) goes through it so a
+// device's own schedule is what actually drives the app, not a hardcoded one.
+function getDaySlots(schedule, date) {
+  const sched = schedule || defaultSchedule();
+  const dayKey = DAY_KEYS[(date || new Date()).getDay()];
+  const override = sched.overrides && sched.overrides[dayKey];
+  if (override && override.length) return override;
+  return sched.default || [];
+}
 
 function todayAt(hh, mm) {
   const now = new Date();
@@ -68,16 +93,18 @@ function todayAt(hh, mm) {
 const ACTIVITY_WRAPUP_GRACE_MINS = 20;
 
 function detectCurrentActivity(now) {
-  const nowMs = (now || new Date()).getTime();
-  for (let i = 0; i < CAMP_SCHEDULE.length; i++) {
-    const slot = CAMP_SCHEDULE[i];
-    const next = CAMP_SCHEDULE[i + 1];
+  const nowDate = now || new Date();
+  const nowMs = nowDate.getTime();
+  const slots = getDaySlots(getAppSettings().schedule, nowDate);
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i];
+    const next = slots[i + 1];
     const end = todayAt(slot.endHour, slot.endMinute);
     const nextStart = next ? todayAt(next.startHour, next.startMinute) : Infinity;
     const wrapUpEnd = Math.min(end + ACTIVITY_WRAPUP_GRACE_MINS * 60000, nextStart);
     if (nowMs < wrapUpEnd) return slot;
   }
-  return CAMP_SCHEDULE[CAMP_SCHEDULE.length - 1] || null;
+  return slots[slots.length - 1] || null;
 }
 
 // Unlike detectCurrentActivity(), this has no wrap-up grace period — it's for
@@ -88,8 +115,10 @@ function detectCurrentActivity(now) {
 // making a freshly opened "Set Game Clock" suggest the activity that had
 // already ended instead of the one about to start).
 function detectUpcomingActivity(now) {
-  const nowMs = (now || new Date()).getTime();
-  for (const slot of CAMP_SCHEDULE) {
+  const nowDate = now || new Date();
+  const nowMs = nowDate.getTime();
+  const slots = getDaySlots(getAppSettings().schedule, nowDate);
+  for (const slot of slots) {
     if (nowMs < todayAt(slot.endHour, slot.endMinute)) return slot;
   }
   return null;
@@ -125,6 +154,7 @@ function defaultAppSettings() {
     selectedCamp: '',
     hockeyDefaultFormat: 'periods',
     basketballDefaultFormat: 'halves',
+    schedule: defaultSchedule(),
   };
 }
 
@@ -671,9 +701,12 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupMan
   const [halftimeMins, setHalftimeMins] = useState(String(initialHalftimeMins ?? 5));
   const [bufferMins, setBufferMins] = useState(String(initialBufferMins ?? 2));
   const [skipHalftime, setSkipHalftime] = useState(!!initialSkipHalftime);
+  const [todaySlots, setTodaySlots] = useState(() => getDaySlots(getAppSettings().schedule));
 
   useEffect(() => {
     if (open) {
+      const slots = getDaySlots(getAppSettings().schedule);
+      setTodaySlots(slots);
       setMode(initialMode || 'auto');
       setHalftimeMins(String(initialHalftimeMins ?? 5));
       setBufferMins(String(initialBufferMins ?? 2));
@@ -685,7 +718,7 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupMan
         // Re-opening the sheet for a timer that's already running (e.g. via
         // long-press to adjust settings) — show what it's actually set to,
         // not whatever's currently upcoming on the wall clock.
-        const matchedSlot = CAMP_SCHEDULE.find((s) => s.label === initialActivityLabel);
+        const matchedSlot = slots.find((s) => s.label === initialActivityLabel);
         setPreset(matchedSlot ? matchedSlot.key : 'custom');
         setActivityLabelState(initialActivityLabel || '');
       } else {
@@ -702,7 +735,7 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupMan
     }
   }, [open, initialMode, initialHalftimeMins, initialBufferMins, initialActivityLabel, initialSkipHalftime, isConfigured]);
 
-  const selectedSlot = CAMP_SCHEDULE.find((s) => s.key === preset);
+  const selectedSlot = todaySlots.find((s) => s.key === preset);
 
   const start = () => {
     if (mode === 'auto') {
@@ -752,7 +785,7 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupMan
           </p>
           <Field label="Activity">
             <div className="grid grid-cols-3 gap-2">
-              {CAMP_SCHEDULE.map((slot) => (
+              {todaySlots.map((slot) => (
                 <button
                   key={slot.key}
                   type="button"
@@ -1175,21 +1208,23 @@ function ScoreHalf({ name, score, onScore, onUndo, footer, scoreClassName = 'tex
 
 /* ============================== SHARED END GAME ============================== */
 
-const ACTIVITY_PERIODS = CAMP_SCHEDULE.map((s) => s.label);
-
 function EndGameSheet({ open, onClose, sportLabel, teamA: teamARaw, teamB: teamBRaw, scoreA, scoreB, globalTimer, winnerOverride }) {
   const teamA = displayTeamName(teamARaw, 'A');
   const teamB = displayTeamName(teamBRaw, 'B');
-  const [activityPeriod, setActivityPeriodState] = useState(ACTIVITY_PERIODS[0]);
   const [appSettings] = useLocalStorage(APP_SETTINGS_KEY, defaultAppSettings());
+  const todaySlots = getDaySlots(appSettings.schedule);
+  const todayLabels = todaySlots.map((s) => s.label);
+  const [activityPeriod, setActivityPeriodState] = useState(todayLabels[0] || '');
+  const [periodExpanded, setPeriodExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (open) {
       setCopied(false);
+      setPeriodExpanded(false);
       const syncedLabel = globalTimer && globalTimer.timer.activityLabel;
       const detected = detectCurrentActivity();
-      setActivityPeriodState(syncedLabel || (detected ? detected.label : ACTIVITY_PERIODS[0]));
+      setActivityPeriodState(syncedLabel || (detected ? detected.label : todayLabels[0] || ''));
     }
   }, [open]);
 
@@ -1232,45 +1267,66 @@ function EndGameSheet({ open, onClose, sportLabel, teamA: teamARaw, teamB: teamB
   };
 
   return (
-    <Sheet open={open} onClose={onClose} title="End Game">
-      <Field label="Activity Period">
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          {ACTIVITY_PERIODS.map((p) => (
-            <button
-              key={p}
-              onClick={() => setActivityPeriod(p)}
-              className={`btn-press rounded-xl py-3 text-sm font-bold ${activityPeriod === p ? 'bg-white text-black' : 'bg-white/10 text-white/70'}`}
-            >
-              {p}
-            </button>
-          ))}
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title="End Game"
+      footer={
+        <div className="flex gap-3">
+          <BigButton
+            onClick={copyMessage}
+            className="flex-1 rounded-2xl bg-white/10 py-4 font-extrabold text-sm flex items-center justify-center gap-2"
+          >
+            <Icon name={copied ? 'Check' : 'Copy'} size={18} /> {copied ? 'Copied!' : 'Copy'}
+          </BigButton>
+          <BigButton
+            onClick={sendWhatsApp}
+            className="flex-[1.6] rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-sm flex items-center justify-center gap-2"
+          >
+            <Icon name="Send" size={18} /> Send to Bentzi
+          </BigButton>
         </div>
-        <TextInput
-          value={activityPeriod}
-          onChange={(e) => setActivityPeriod(e.target.value)}
-          placeholder="Custom period name..."
-          maxLength={30}
-        />
-      </Field>
-
+      }
+    >
       <div className="rounded-2xl bg-white/5 border border-white/10 p-5 mb-6 text-center">
         <div className="text-xs font-extrabold tracking-widest text-white/40 mb-2">FINAL SCORE</div>
         <div className="text-lg font-bold mb-3">{teamA} {scoreA} — {scoreB} {teamB}</div>
         <div className="text-emerald-400 font-extrabold text-xl leading-snug">{message}</div>
       </div>
 
-      <BigButton
-        onClick={copyMessage}
-        className="w-full rounded-2xl bg-white/10 py-6 font-extrabold text-lg mb-3 flex items-center justify-center gap-2"
-      >
-        <Icon name={copied ? 'Check' : 'Copy'} size={22} /> {copied ? 'Copied!' : 'Copy Message'}
-      </BigButton>
-      <BigButton
-        onClick={sendWhatsApp}
-        className="w-full rounded-2xl bg-emerald-400 text-black py-6 font-extrabold text-lg flex items-center justify-center gap-2"
-      >
-        <Icon name="Send" size={22} /> Send to Bentzi (WhatsApp)
-      </BigButton>
+      <Field label="Activity Period">
+        <button
+          type="button"
+          onClick={() => setPeriodExpanded((e) => !e)}
+          className="btn-press w-full flex items-center justify-between rounded-xl bg-white/10 px-4 py-3"
+        >
+          <span className="text-sm font-bold truncate">{activityPeriod || 'Set period…'}</span>
+          <span className="shrink-0 flex items-center gap-1 text-xs text-white/40 font-bold ml-2">
+            Change <Icon name={periodExpanded ? 'ChevronUp' : 'ChevronDown'} size={14} />
+          </span>
+        </button>
+        {periodExpanded && (
+          <div className="mt-3">
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {todayLabels.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setActivityPeriod(p)}
+                  className={`btn-press rounded-xl py-3 text-sm font-bold ${activityPeriod === p ? 'bg-white text-black' : 'bg-white/10 text-white/70'}`}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+            <TextInput
+              value={activityPeriod}
+              onChange={(e) => setActivityPeriod(e.target.value)}
+              placeholder="Custom period name..."
+              maxLength={30}
+            />
+          </div>
+        )}
+      </Field>
     </Sheet>
   );
 }
@@ -1312,7 +1368,186 @@ function VibrationTest() {
   );
 }
 
+/* ============================== ACTIVITY SCHEDULE EDITOR ============================== */
+
+let scheduleSlotSeq = 0;
+function newSlot() {
+  scheduleSlotSeq += 1;
+  return { key: `custom_${Date.now()}_${scheduleSlotSeq}`, label: 'New Activity', pill: 'New Activity', startHour: 9, startMinute: 0, endHour: 10, endMinute: 0 };
+}
+
+function timeInputValue(h, m) { return `${pad2(h)}:${pad2(m)}`; }
+function parseTimeInputValue(v) {
+  const [h, m] = (v || '0:0').split(':').map((n) => parseInt(n, 10) || 0);
+  return { h, m };
+}
+
+function SlotEditorRow({ slot, onChange, onRemove }) {
+  return (
+    <div className="flex items-center gap-2 mb-2">
+      <input
+        type="text"
+        value={slot.label}
+        onChange={(e) => onChange({ ...slot, label: e.target.value, pill: e.target.value })}
+        placeholder="Activity name"
+        maxLength={30}
+        className="flex-1 min-w-0 rounded-lg bg-white/10 border border-white/10 px-3 py-2.5 text-sm font-bold text-white outline-none focus:border-emerald-400/60"
+      />
+      <input
+        type="time"
+        value={timeInputValue(slot.startHour, slot.startMinute)}
+        onChange={(e) => { const { h, m } = parseTimeInputValue(e.target.value); onChange({ ...slot, startHour: h, startMinute: m }); }}
+        className="shrink-0 rounded-lg bg-white/10 border border-white/10 px-2 py-2.5 text-sm font-bold text-white outline-none focus:border-emerald-400/60 tabular"
+      />
+      <span className="text-white/30 text-xs shrink-0">–</span>
+      <input
+        type="time"
+        value={timeInputValue(slot.endHour, slot.endMinute)}
+        onChange={(e) => { const { h, m } = parseTimeInputValue(e.target.value); onChange({ ...slot, endHour: h, endMinute: m }); }}
+        className="shrink-0 rounded-lg bg-white/10 border border-white/10 px-2 py-2.5 text-sm font-bold text-white outline-none focus:border-emerald-400/60 tabular"
+      />
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label="Remove activity"
+        className="btn-press shrink-0 w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center text-red-400"
+      >
+        <Icon name="Trash2" size={14} />
+      </button>
+    </div>
+  );
+}
+
+function SlotListEditor({ slots, onChange }) {
+  const updateAt = (i, next) => onChange(slots.map((s, idx) => (idx === i ? next : s)));
+  const removeAt = (i) => onChange(slots.filter((_, idx) => idx !== i));
+  const add = () => onChange([...slots, newSlot()]);
+  return (
+    <div>
+      {slots.map((slot, i) => (
+        <SlotEditorRow key={slot.key} slot={slot} onChange={(next) => updateAt(i, next)} onRemove={() => removeAt(i)} />
+      ))}
+      {slots.length === 0 && (
+        <p className="text-white/30 text-xs mb-2">No activities yet — add your first one below.</p>
+      )}
+      <button
+        type="button"
+        onClick={add}
+        className="btn-press w-full rounded-lg bg-white/5 border border-dashed border-white/20 py-2.5 text-xs font-bold text-white/50 flex items-center justify-center gap-1"
+      >
+        <Icon name="Plus" size={14} /> Add Activity
+      </button>
+    </div>
+  );
+}
+
+function DayOverrideRow({ dayKey, label, defaultSlots, overrideSlots, onSetOverride }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasOverride = !!overrideSlots;
+  const summary = hasOverride ? `${overrideSlots.length} custom` : 'Same as default';
+
+  return (
+    <div className="rounded-xl bg-white/5 border border-white/10 mb-2 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded((e) => !e)}
+        className="btn-press w-full flex items-center justify-between px-4 py-3"
+      >
+        <span className="text-sm font-bold">{label}</span>
+        <span className="flex items-center gap-2 text-xs text-white/40 font-bold">
+          {summary}
+          <Icon name={expanded ? 'ChevronUp' : 'ChevronDown'} size={14} />
+        </span>
+      </button>
+      {expanded && (
+        <div className="px-4 pb-4">
+          <button
+            type="button"
+            onClick={() => onSetOverride(hasOverride ? null : defaultSlots.map((s) => ({ ...s, key: `${dayKey}_${s.key}` })))}
+            className={`btn-press w-full flex items-center justify-between gap-2 rounded-xl px-4 py-3 mb-3 border ${hasOverride ? 'bg-emerald-400 border-emerald-400 text-black' : 'bg-white/5 border-white/10 text-white/70'}`}
+          >
+            <span className="text-sm font-bold">Different schedule for {label}</span>
+            <span className={`shrink-0 w-11 h-6 rounded-full relative transition-colors ${hasOverride ? 'bg-black/20' : 'bg-white/15'}`}>
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform ${hasOverride ? 'translate-x-5 bg-black' : 'bg-white/70'}`} />
+            </span>
+          </button>
+          {hasOverride && <SlotListEditor slots={overrideSlots} onChange={onSetOverride} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScheduleSheet({ open, onClose, settings, setSettings }) {
+  const schedule = settings.schedule || defaultSchedule();
+
+  const updateDefault = (slots) => setSettings((s) => ({ ...s, schedule: { ...(s.schedule || defaultSchedule()), default: slots } }));
+
+  const setOverride = (dayKey, slotsOrNull) => setSettings((s) => {
+    const cur = s.schedule || defaultSchedule();
+    const overrides = { ...cur.overrides };
+    if (slotsOrNull) overrides[dayKey] = slotsOrNull;
+    else delete overrides[dayKey];
+    return { ...s, schedule: { ...cur, overrides } };
+  });
+
+  const resetToDefaults = () => setSettings((s) => ({ ...s, schedule: defaultSchedule() }));
+  const clearAll = () => setSettings((s) => ({ ...s, schedule: { default: [], overrides: {} } }));
+
+  return (
+    <Sheet open={open} onClose={onClose} title="Activity Schedule">
+      <p className="text-white/50 text-sm mb-5 leading-relaxed">
+        These activity blocks power the Game Clock auto-split and the End Game period picker. Set your everyday times below, then open a day to give it its own schedule — handy for Friday.
+      </p>
+
+      <Field label="Default Schedule">
+        <SlotListEditor slots={schedule.default || []} onChange={updateDefault} />
+      </Field>
+
+      <Field label="Day Overrides">
+        {DAY_KEYS.map((dayKey) => (
+          <DayOverrideRow
+            key={dayKey}
+            dayKey={dayKey}
+            label={DAY_LABELS[dayKey]}
+            defaultSlots={schedule.default || []}
+            overrideSlots={schedule.overrides && schedule.overrides[dayKey]}
+            onSetOverride={(slots) => setOverride(dayKey, slots)}
+          />
+        ))}
+      </Field>
+
+      <div className="flex gap-3 mb-3">
+        <button
+          type="button"
+          onClick={resetToDefaults}
+          className="btn-press flex-1 rounded-xl bg-white/10 py-3 text-xs font-bold text-white/70"
+        >
+          Reset to YKP Defaults
+        </button>
+        <button
+          type="button"
+          onClick={clearAll}
+          className="btn-press flex-1 rounded-xl bg-white/10 py-3 text-xs font-bold text-red-400"
+        >
+          Clear All
+        </button>
+      </div>
+
+      <BigButton onClick={onClose} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
+        Done
+      </BigButton>
+    </Sheet>
+  );
+}
+
 function AppSettingsSheet({ open, onClose, settings, setSettings }) {
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const schedule = settings.schedule || defaultSchedule();
+  const activeCount = (schedule.default || []).length;
+  const overrideDays = Object.keys(schedule.overrides || {}).filter((k) => (schedule.overrides[k] || []).length > 0);
+  const scheduleSummary = `${activeCount} activit${activeCount === 1 ? 'y' : 'ies'}${overrideDays.length ? ` · ${overrideDays.map((k) => DAY_LABELS[k]).join(', ')} differs` : ''}`;
+
   return (
     <Sheet open={open} onClose={onClose} title="App Settings">
       <Field label="Camp Roster">
@@ -1339,6 +1574,21 @@ function AppSettingsSheet({ open, onClose, settings, setSettings }) {
           Picking a camp fills team pickers with its roster as suggestions. Leave on "None" to keep the roster empty.
         </p>
       </Field>
+
+      <Field label="Activity Schedule">
+        <button
+          type="button"
+          onClick={() => setScheduleOpen(true)}
+          className="btn-press w-full flex items-center justify-between rounded-xl bg-white/10 px-4 py-3"
+        >
+          <span className="text-sm font-bold">{scheduleSummary}</span>
+          <Icon name="ChevronRight" size={16} className="text-white/40" />
+        </button>
+        <p className="text-white/30 text-xs mt-2 leading-relaxed">
+          Powers the Game Clock auto-split and the End Game period picker. Stored on this device — give any day (like Friday) its own times, or build your own list from scratch.
+        </p>
+      </Field>
+      <ScheduleSheet open={scheduleOpen} onClose={() => setScheduleOpen(false)} settings={settings} setSettings={setSettings} />
 
       <Field label="Sports Director WhatsApp Phone #">
         <TextInput
