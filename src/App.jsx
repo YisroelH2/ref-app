@@ -12,7 +12,7 @@ import ConsultButton from './components/ConsultButton.jsx';
 import ConsultOverlay from './components/ConsultOverlay.jsx';
 import { isFirebaseConfigured } from './firebaseConfig.js';
 
-const APP_VERSION = '4.1.1';
+const APP_VERSION = '4.1.2';
 
 
 
@@ -1234,7 +1234,7 @@ function ScoreHalf({ name, score, onScore, onUndo, footer, scoreClassName = 'tex
 
 /* ============================== SHARED END GAME ============================== */
 
-function EndGameSheet({ open, onClose, sportLabel, teamA: teamARaw, teamB: teamBRaw, scoreA, scoreB, globalTimer, winnerOverride, onReset, resetLabel = 'Reset Game' }) {
+function EndGameSheet({ open, onClose, sportLabel, teamA: teamARaw, teamB: teamBRaw, scoreA, scoreB, globalTimer, winnerOverride, onReset, resetLabel = 'Reset/Delete Game' }) {
   const teamA = displayTeamName(teamARaw, 'A');
   const teamB = displayTeamName(teamBRaw, 'B');
   const [appSettings] = useLocalStorage(APP_SETTINGS_KEY, defaultAppSettings());
@@ -1243,11 +1243,15 @@ function EndGameSheet({ open, onClose, sportLabel, teamA: teamARaw, teamB: teamB
   const [activityPeriod, setActivityPeriodState] = useState(todayLabels[0] || '');
   const [periodExpanded, setPeriodExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [sentToBentzi, setSentToBentzi] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
 
   useEffect(() => {
     if (open) {
       setCopied(false);
       setPeriodExpanded(false);
+      setSentToBentzi(false);
+      setConfirmReset(false);
       const syncedLabel = globalTimer && globalTimer.timer.activityLabel;
       const detected = detectCurrentActivity();
       setActivityPeriodState(syncedLabel || (detected ? detected.label : todayLabels[0] || ''));
@@ -1290,6 +1294,17 @@ function EndGameSheet({ open, onClose, sportLabel, teamA: teamARaw, teamB: teamB
       ? `https://wa.me/${phone}?text=${encodeURIComponent(message)}`
       : `https://wa.me/?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
+    setSentToBentzi(true);
+  };
+
+  const handleResetClick = () => {
+    if (!confirmReset) {
+      setConfirmReset(true);
+      vibrate(15);
+      return;
+    }
+    onReset();
+    onClose();
   };
 
   return (
@@ -1355,12 +1370,31 @@ function EndGameSheet({ open, onClose, sportLabel, teamA: teamARaw, teamB: teamB
       </Field>
 
       {onReset && (
-        <BigButton
-          onClick={() => { onReset(); onClose(); }}
-          className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-3 flex items-center justify-center gap-2"
-        >
-          <Icon name="RotateCcw" size={18} /> {resetLabel}
-        </BigButton>
+        <div className="mt-3">
+          {confirmReset && (
+            <p className="text-red-400 text-xs font-bold mb-2 text-center leading-relaxed">
+              {sentToBentzi
+                ? 'This erases the final score for good — reset anyway?'
+                : "You haven't sent this to Bentzi yet — resetting will erase the final score for good."}
+            </p>
+          )}
+          <div className="flex gap-3">
+            {confirmReset && (
+              <BigButton
+                onClick={() => setConfirmReset(false)}
+                className="flex-1 rounded-2xl bg-white/10 py-4 font-bold text-white"
+              >
+                Cancel
+              </BigButton>
+            )}
+            <BigButton
+              onClick={handleResetClick}
+              className={`${confirmReset ? 'flex-[1.6]' : 'w-full'} rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 flex items-center justify-center gap-2`}
+            >
+              <Icon name={confirmReset ? 'AlertTriangle' : 'RotateCcw'} size={18} /> {confirmReset ? 'Confirm Reset' : resetLabel}
+            </BigButton>
+          </div>
+        </div>
       )}
     </Sheet>
   );
@@ -2492,7 +2526,7 @@ function Volleyball({ globalTimer, onBack, roomSession, permissions, consult }) 
         globalTimer={globalTimer}
         winnerOverride={matchWinnerOverride}
         onReset={() => setVb(defaultVolleyball())}
-        resetLabel="Reset Match"
+        resetLabel="Reset/Delete Match"
       />
     </div>
   );
