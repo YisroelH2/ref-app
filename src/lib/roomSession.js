@@ -44,19 +44,23 @@ const defaultSession = () => ({ roomCode: null, role: null });
 export function useRoomSession() {
   const [session, setSession] = useLocalStorage(SESSION_KEY, defaultSession());
   const [connected, setConnected] = useState(false);
+  const [presenceCount, setPresenceCount] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const clientId = getOrCreateClientId();
   const roomCode = session.roomCode;
 
   // While a room is active: watch that it still exists (so a guest finds
-  // out promptly when the host stops hosting) and mirror live connectivity
-  // for the "Connected: Room XXXX" badge.
+  // out promptly when the host stops hosting), mirror live connectivity for
+  // the "Connected: Room XXXX" badge, and maintain this device's presence
+  // entry so every connected ref can see a live headcount.
   useEffect(() => {
-    if (!roomCode) { setConnected(false); return; }
+    if (!roomCode) { setConnected(false); setPresenceCount(0); return; }
     let cancelled = false;
     let unsubMeta = null;
     let unsubConn = null;
+    let unsubPresence = null;
+    let presenceRef = null;
 
     (async () => {
       const { db, dbFns } = await getFirebaseServices();
@@ -65,16 +69,39 @@ export function useRoomSession() {
       unsubMeta = dbFns.onValue(dbFns.ref(db, `rooms/${roomCode}/meta`), (snap) => {
         if (!snap.exists()) setSession(defaultSession());
       });
-      unsubConn = dbFns.onValue(dbFns.ref(db, '.info/connected'), (snap) => setConnected(!!snap.val()));
+
+      presenceRef = dbFns.ref(db, `rooms/${roomCode}/presence/${clientId}`);
+      unsubConn = dbFns.onValue(dbFns.ref(db, '.info/connected'), (snap) => {
+        const isConnected = !!snap.val();
+        setConnected(isConnected);
+        if (isConnected) {
+          // Re-armed on every (re)connect, since a prior onDisconnect
+          // registration doesn't survive a socket drop/reconnect.
+          dbFns.onDisconnect(presenceRef).remove();
+          dbFns.set(presenceRef, { role: session.role, joinedAt: dbFns.serverTimestamp() }).catch(() => {});
+        }
+      });
+
+      unsubPresence = dbFns.onValue(dbFns.ref(db, `rooms/${roomCode}/presence`), (snap) => {
+        setPresenceCount(snap.exists() ? Object.keys(snap.val()).length : 0);
+      });
     })();
 
     return () => {
       cancelled = true;
       if (unsubMeta) unsubMeta();
       if (unsubConn) unsubConn();
+      if (unsubPresence) unsubPresence();
+      if (presenceRef) {
+        const nodeToRemove = presenceRef;
+        getFirebaseServices().then(({ dbFns }) => {
+          if (dbFns) { try { dbFns.remove(nodeToRemove); } catch (e) {} }
+        });
+      }
       setConnected(false);
+      setPresenceCount(0);
     };
-  }, [roomCode, setSession]);
+  }, [roomCode, setSession, clientId]);
 
   const hostRoom = useCallback(async () => {
     setBusy(true);
@@ -89,10 +116,17 @@ export function useRoomSession() {
         if (!snap.exists()) code = candidate;
       }
       if (!code) throw new Error('Could not find an open room code — try again.');
-      await dbFns.set(dbFns.ref(db, `rooms/${code}/meta`), {
-        createdAt: dbFns.serverTimestamp(),
-        hostClientId: clientId,
-      });
+      await Promise.all([
+        dbFns.set(dbFns.ref(db, `rooms/${code}/meta`), {
+          createdAt: dbFns.serverTimestamp(),
+          hostClientId: clientId,
+        }),
+        dbFns.set(dbFns.ref(db, `rooms/${code}/permissions`), {
+          hostOnly: false,
+          hostId: clientId,
+          locks: { score: false, timer: false, possession: false },
+        }),
+      ]);
       setSession({ roomCode: code, role: 'host' });
     } catch (e) {
       setError(e.message || 'Could not start hosting.');
@@ -135,5 +169,5 @@ export function useRoomSession() {
     }
   }, [session, setSession]);
 
-  return { roomCode, role: session.role, clientId, connected, busy, error, hostRoom, joinRoom, leaveRoom };
+  return { roomCode, role: session.role, clientId, connected, presenceCount, busy, error, hostRoom, joinRoom, leaveRoom };
 }

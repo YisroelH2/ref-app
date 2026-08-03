@@ -5,9 +5,14 @@ import Sheet from './components/Sheet.jsx';
 import { useLocalStorage } from './lib/useLocalStorage.js';
 import { useRoomSession } from './lib/roomSession.js';
 import { useRoomSync } from './lib/useRoomSync.js';
+import { useRoomPermissions } from './lib/roomPermissions.js';
+import { useConsult } from './lib/consult.js';
+import { vibrate } from './lib/haptics.js';
+import ConsultButton from './components/ConsultButton.jsx';
+import ConsultOverlay from './components/ConsultOverlay.jsx';
 import { isFirebaseConfigured } from './firebaseConfig.js';
 
-const APP_VERSION = '4.0.2';
+const APP_VERSION = '4.1.0';
 
 
 
@@ -130,10 +135,6 @@ function detectUpcomingActivity(now) {
 
 function formatHM(hh, mm) {
   return new Date(2000, 0, 1, hh, mm).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-}
-
-function vibrate(pattern) {
-  try { if (navigator.vibrate) navigator.vibrate(pattern); } catch (e) {}
 }
 
 function pluralizePeriodUnit(unit, count) {
@@ -970,7 +971,7 @@ function TimerSetupSheet({ open, onClose, onSetupAuto, onSetupAutoAt, onSetupMan
   );
 }
 
-function TimerBar({ globalTimer, periodCount = 2, unitLabel = 'Half' }) {
+function TimerBar({ globalTimer, periodCount = 2, unitLabel = 'Half', locked = false }) {
   const { timer, remainingMs, toggle, reset } = globalTimer;
   const [setupOpen, setSetupOpen] = useState(false);
   const [driftDismissed, setDriftDismissed] = useState(false);
@@ -986,6 +987,7 @@ function TimerBar({ globalTimer, periodCount = 2, unitLabel = 'Half' }) {
   };
 
   const handlePillPointerDown = () => {
+    if (locked) return;
     longPressFiredRef.current = false;
     clearPressTimer();
     pressTimerRef.current = setTimeout(() => {
@@ -997,6 +999,7 @@ function TimerBar({ globalTimer, periodCount = 2, unitLabel = 'Half' }) {
 
   const handlePillPointerUp = () => {
     clearPressTimer();
+    if (locked) { vibrate(15); return; }
     if (!longPressFiredRef.current) toggle();
   };
 
@@ -1030,11 +1033,11 @@ function TimerBar({ globalTimer, periodCount = 2, unitLabel = 'Half' }) {
     return (
       <>
         <button
-          onClick={() => setSetupOpen(true)}
-          className="btn-press w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-white/20 py-4 landscape:py-2 text-white/60 font-bold text-sm mb-4 landscape:mb-1"
+          onClick={() => { if (locked) { vibrate(15); return; } setSetupOpen(true); }}
+          className={`btn-press w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-white/20 py-4 landscape:py-2 text-white/60 font-bold text-sm mb-4 landscape:mb-1 ${locked ? 'opacity-50' : ''}`}
         >
-          <Icon name="Clock" size={18} />
-          Set Game Clock
+          <Icon name={locked ? 'Lock' : 'Clock'} size={18} />
+          {locked ? 'Game Clock · Host Only' : 'Set Game Clock'}
         </button>
         <TimerSetupSheet
           open={setupOpen}
@@ -1064,7 +1067,7 @@ function TimerBar({ globalTimer, periodCount = 2, unitLabel = 'Half' }) {
           <div className="text-red-400 text-xs font-extrabold tracking-widest">TIME'S UP</div>
           <div className="text-2xl landscape:text-lg font-black tabular text-white">00:00</div>
         </div>
-        <IconButton name="RotateCcw" onClick={reset} label="Reset timer" />
+        <IconButton name="RotateCcw" onClick={() => { if (locked) { vibrate(15); return; } reset(); }} label="Reset timer" />
       </div>
     );
   }
@@ -1082,10 +1085,11 @@ function TimerBar({ globalTimer, periodCount = 2, unitLabel = 'Half' }) {
         onContextMenu={(e) => e.preventDefault()}
         className={`btn-press w-full rounded-2xl border-2 py-4 landscape:py-1.5 px-5 landscape:px-3 flex items-center justify-between transition-colors ${
           isRunning ? 'border-emerald-400/40 bg-emerald-400/5' : 'border-red-500 bg-red-500/10 animate-pulse-fast'
-        }`}
+        } ${locked ? 'opacity-60' : ''}`}
       >
         <div className="text-left">
-          <div className={`text-xs font-extrabold tracking-widest ${isRunning ? 'text-emerald-400' : 'text-red-400'}`}>
+          <div className={`text-xs font-extrabold tracking-widest flex items-center gap-1 ${isRunning ? 'text-emerald-400' : 'text-red-400'}`}>
+            {locked && <Icon name="Lock" size={10} />}
             {timer.totalHalves > 1 ? `${unitLabel.toUpperCase()} ${timer.currentHalf} ` : ''}{isRunning ? '· RUNNING' : '· PAUSED'}
           </div>
           <div className={`text-4xl landscape:text-2xl font-black tabular ${isRunning ? 'text-white' : 'text-red-400'}`}>
@@ -1104,7 +1108,7 @@ function TimerBar({ globalTimer, periodCount = 2, unitLabel = 'Half' }) {
           </div>
           <div className="flex gap-2">
             <BigButton
-              onClick={() => { globalTimer.recalculate(); setDriftDismissed(true); }}
+              onClick={() => { if (locked) { vibrate(15); return; } globalTimer.recalculate(); setDriftDismissed(true); }}
               className="flex-1 rounded-xl bg-amber-400 text-black py-2.5 text-xs font-extrabold"
             >
               Adjust to {new Date(timer.targetEndTs).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
@@ -1126,7 +1130,7 @@ function TimerBar({ globalTimer, periodCount = 2, unitLabel = 'Half' }) {
         <div className="flex items-center gap-1.5 shrink-0">
           {timer.mode === 'auto' && (
             <button
-              onClick={() => globalTimer.restartHalfWithBuffer()}
+              onClick={() => { if (locked) { vibrate(15); return; } globalTimer.restartHalfWithBuffer(); }}
               aria-label={`Reset this ${unitLabel.toLowerCase()}'s countdown to the ${unitLabel.toLowerCase()} length plus buffer`}
               className="btn-press flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white/60"
             >
@@ -1135,7 +1139,7 @@ function TimerBar({ globalTimer, periodCount = 2, unitLabel = 'Half' }) {
           )}
           {timer.mode === 'auto' && !!timer.targetEndTs && (
             <button
-              onClick={() => globalTimer.recalculate()}
+              onClick={() => { if (locked) { vibrate(15); return; } globalTimer.recalculate(); }}
               className="btn-press flex items-center gap-1 rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white/60"
             >
               <Icon name="RotateCw" size={11} /> Recalculate
@@ -1175,7 +1179,7 @@ function LiveClock({ className }) {
   return <span className={className}>{now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>;
 }
 
-function Header({ title, onBack, onSettings }) {
+function Header({ title, onBack, onSettings, extra }) {
   return (
     <div className="flex items-center justify-between mb-4 landscape:mb-1 landscape:py-1 landscape:px-3">
       <div className="flex items-center gap-2">
@@ -1183,6 +1187,7 @@ function Header({ title, onBack, onSettings }) {
         <h1 className="text-2xl landscape:text-lg font-extrabold tracking-tight">{title}</h1>
       </div>
       <div className="flex items-center gap-2">
+        {extra}
         <LiveClock className="text-white/40 text-sm font-bold tabular mr-1" />
         {onSettings && <IconButton name="Settings" onClick={onSettings} label="Settings" />}
       </div>
@@ -1190,26 +1195,35 @@ function Header({ title, onBack, onSettings }) {
   );
 }
 
+// Wraps ConsultButton so it's fully absent (not just disabled) unless
+// Multi-Ref Sync is actually configured and this device is in a live room —
+// matches the gating idiom already used for the sync UI itself.
+function ConsultSlot({ roomSession, consult }) {
+  if (!isFirebaseConfigured || !roomSession.roomCode) return null;
+  return <ConsultButton consult={consult.consult} sendConsult={consult.sendConsult} sending={consult.sending} />;
+}
+
 /* ============================== SHARED SCORE HALF ============================== */
 
-function ScoreHalf({ name, score, onScore, onUndo, footer, scoreClassName = 'text-8xl', color, locked = false }) {
+function ScoreHalf({ name, score, onScore, onUndo, footer, scoreClassName = 'text-8xl', color, locked = false, hostLocked = false }) {
   const c = teamColorClasses(color);
+  const disabled = locked || hostLocked;
   return (
     <button
-      onClick={() => { if (locked) { vibrate(15); return; } onScore(); }}
-      aria-disabled={locked}
-      className={`btn-press flex-1 rounded-3xl ${c.bg} border-2 ${c.border} flex flex-col items-center justify-center gap-2 landscape:gap-1 relative overflow-hidden py-4 landscape:py-2 px-4 landscape:px-3 landscape:h-full landscape:min-h-0 ${locked ? 'opacity-40 saturate-[.4]' : ''}`}
+      onClick={() => { if (disabled) { vibrate(15); return; } onScore(); }}
+      aria-disabled={disabled}
+      className={`btn-press flex-1 rounded-3xl ${c.bg} border-2 ${c.border} flex flex-col items-center justify-center gap-2 landscape:gap-1 relative overflow-hidden py-4 landscape:py-2 px-4 landscape:px-3 landscape:h-full landscape:min-h-0 ${disabled ? 'opacity-40 saturate-[.4]' : ''}`}
     >
       <div className={`${c.sub} text-xs font-extrabold tracking-widest self-start flex items-center gap-1`}>
-        {locked && <Icon name="Lock" size={11} />}
-        {locked ? 'FIELDING · LOCKED' : 'TAP TO SCORE'}
+        {disabled && <Icon name="Lock" size={11} />}
+        {locked ? 'FIELDING · LOCKED' : hostLocked ? 'HOST ONLY' : 'TAP TO SCORE'}
       </div>
       <div className={`text-lg landscape:text-sm font-bold ${c.text} opacity-70 text-center truncate max-w-full`}>{name}</div>
       <div className={`${scoreClassName} landscape:text-4xl font-black tabular ${c.text}`}>{score}</div>
       {footer}
       <div
         role="button"
-        onClick={(e) => { e.stopPropagation(); onUndo(); }}
+        onClick={(e) => { e.stopPropagation(); if (disabled) { vibrate(15); return; } onUndo(); }}
         className={`btn-press absolute bottom-3 landscape:bottom-1.5 right-3 landscape:right-1.5 w-11 h-11 landscape:w-9 landscape:h-9 rounded-full ${c.overlay} ${c.text} flex items-center justify-center`}
       >
         <Icon name="Minus" size={18} />
@@ -1568,7 +1582,78 @@ function SyncSectionWrap({ bare, children }) {
   return bare ? <div className="mb-5">{children}</div> : <Field label="Multi-Ref Sync">{children}</Field>;
 }
 
-function MultiRefSyncField({ roomSession, bare = false }) {
+const HOST_ONLY_LOCK_ROWS = [
+  { key: 'score', label: 'Lock Score Adjustments' },
+  { key: 'timer', label: 'Lock Start/Stop Timer' },
+  { key: 'possession', label: 'Lock Server/Possession' },
+  { key: 'period', label: 'Lock Period/Half & Timeouts' },
+];
+
+// A toggle row shared by the master "Host-Only Control" switch and its
+// per-category sub-toggles — same on/off pill visual, different size.
+function PermissionToggleRow({ label, on, onToggle, disabled, small = false, icon }) {
+  return (
+    <button
+      type="button"
+      onClick={() => { if (!disabled) onToggle(); }}
+      disabled={disabled}
+      className={`btn-press w-full flex items-center justify-between gap-2 ${disabled ? 'opacity-60' : ''}`}
+    >
+      <span className={`flex items-center gap-2 font-bold ${small ? 'text-xs text-white/70' : 'text-sm'}`}>
+        {icon}
+        {label}
+      </span>
+      <span className={`shrink-0 rounded-full relative transition-colors ${on ? 'bg-emerald-400' : 'bg-white/15'} ${small ? 'w-9 h-5' : 'w-11 h-6'}`}>
+        <span
+          className={`absolute top-0.5 left-0.5 rounded-full transition-transform bg-black ${small ? 'w-4 h-4' : 'w-5 h-5'} ${
+            on ? (small ? 'translate-x-4' : 'translate-x-5') : ''
+          } ${!on ? 'bg-white/70' : ''}`}
+        />
+      </span>
+    </button>
+  );
+}
+
+// Host-Only Control: a master switch plus a collapsed sub-menu of
+// per-category toggles, visible to every connected device but only
+// writable by the host (roomPermissions.setHostOnly/setLock are already
+// no-ops for non-hosts, this just also disables the UI so it reads as
+// read-only rather than silently failing).
+function HostOnlyControls({ roomSession, permissions }) {
+  const isHost = roomSession.role === 'host';
+  const p = permissions.permissions;
+
+  return (
+    <div className="rounded-xl bg-white/5 border border-white/10 px-4 py-3 mt-2">
+      <PermissionToggleRow
+        label="Host-Only Control"
+        icon={<Icon name="Lock" size={14} />}
+        on={p.hostOnly}
+        onToggle={() => permissions.setHostOnly(!p.hostOnly)}
+        disabled={!isHost}
+      />
+      {!isHost && (
+        <p className="text-white/30 text-xs mt-2 leading-relaxed">Only the host can change this.</p>
+      )}
+      {p.hostOnly && (
+        <div className="mt-3 pt-3 border-t border-white/10 space-y-2.5">
+          {HOST_ONLY_LOCK_ROWS.map((row) => (
+            <PermissionToggleRow
+              key={row.key}
+              label={row.label}
+              on={!!p.locks[row.key]}
+              onToggle={() => permissions.setLock(row.key, !p.locks[row.key])}
+              disabled={!isHost}
+              small
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MultiRefSyncField({ roomSession, permissions, bare = false }) {
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [copied, setCopied] = useState(false);
@@ -1592,19 +1677,22 @@ function MultiRefSyncField({ roomSession, bare = false }) {
         setTimeout(() => setCopied(false), 1500);
       } catch (e) {}
     };
+    const refWord = roomSession.presenceCount === 1 ? 'Ref' : 'Refs';
     return (
       <SyncSectionWrap bare={bare}>
         <div className="rounded-xl bg-white/10 px-4 py-3 flex items-center gap-3">
           <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${roomSession.connected ? 'bg-emerald-400' : 'bg-yellow-400 animate-pulse'}`} />
           <div className="min-w-0">
             <div className="text-sm font-bold truncate">
-              {roomSession.connected ? 'Connected' : 'Reconnecting…'}: Room {roomSession.roomCode}
+              {roomSession.connected ? 'Connected' : 'Reconnecting…'}: Room {roomSession.roomCode} ({roomSession.presenceCount} {refWord})
             </div>
             <div className="text-white/40 text-xs font-semibold">
               {roomSession.role === 'host' ? 'Hosting' : 'Joined as guest'}
             </div>
           </div>
         </div>
+
+        {permissions && <HostOnlyControls roomSession={roomSession} permissions={permissions} />}
 
         <button
           type="button"
@@ -1681,7 +1769,7 @@ function MultiRefSyncField({ roomSession, bare = false }) {
 // Compact entry point for per-game settings sheets: a small status pill that
 // opens the same Multi-Ref Sync controls as App Settings in a nested sheet,
 // so a ref can host/join without leaving the game they're scoring.
-function MultiRefSyncButton({ roomSession }) {
+function MultiRefSyncButton({ roomSession, permissions }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -1693,7 +1781,7 @@ function MultiRefSyncButton({ roomSession }) {
         {roomSession.roomCode ? (
           <>
             <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${roomSession.connected ? 'bg-emerald-400' : 'bg-yellow-400 animate-pulse'}`} />
-            Multi-Ref Sync · Room {roomSession.roomCode}
+            Multi-Ref Sync · Room {roomSession.roomCode} ({roomSession.presenceCount})
           </>
         ) : (
           <>
@@ -1703,13 +1791,13 @@ function MultiRefSyncButton({ roomSession }) {
         )}
       </button>
       <Sheet open={open} onClose={() => setOpen(false)} title="Multi-Ref Sync">
-        <MultiRefSyncField roomSession={roomSession} bare />
+        <MultiRefSyncField roomSession={roomSession} permissions={permissions} bare />
       </Sheet>
     </>
   );
 }
 
-function AppSettingsSheet({ open, onClose, settings, setSettings, roomSession }) {
+function AppSettingsSheet({ open, onClose, settings, setSettings, roomSession, permissions }) {
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const schedule = settings.schedule || defaultSchedule();
   const activeCount = (schedule.default || []).length;
@@ -1718,7 +1806,7 @@ function AppSettingsSheet({ open, onClose, settings, setSettings, roomSession })
 
   return (
     <Sheet open={open} onClose={onClose} title="App Settings">
-      <MultiRefSyncField roomSession={roomSession} />
+      <MultiRefSyncField roomSession={roomSession} permissions={permissions} />
 
       <Field label="Camp Roster">
         <div className="flex flex-wrap gap-2">
@@ -1876,7 +1964,7 @@ function AppSettingsSheet({ open, onClose, settings, setSettings, roomSession })
   );
 }
 
-function Home({ onSelect, settings, setSettings, roomSession }) {
+function Home({ onSelect, settings, setSettings, roomSession, permissions }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
@@ -1926,6 +2014,7 @@ function Home({ onSelect, settings, setSettings, roomSession }) {
         settings={settings}
         setSettings={setSettings}
         roomSession={roomSession}
+        permissions={permissions}
       />
 
       <div className="mt-4 text-center text-white/15 text-[10px] font-semibold">
@@ -1965,7 +2054,7 @@ function pointServeEligibility(s) {
   return { aEligible, bEligible };
 }
 
-function VolleyballSetTracker({ vb, teamADisplay, teamBDisplay, onAdvanceSet, onViewSet }) {
+function VolleyballSetTracker({ vb, teamADisplay, teamBDisplay, onAdvanceSet, onViewSet, locked }) {
   const setHistory = vb.setHistory || [];
   const setsWonA = setHistory.filter((e) => e && e.winner === teamADisplay).length;
   const setsWonB = setHistory.filter((e) => e && e.winner === teamBDisplay).length;
@@ -2010,9 +2099,10 @@ function VolleyballSetTracker({ vb, teamADisplay, teamBDisplay, onAdvanceSet, on
         </div>
         {!matchOver && isLive && (
           <button
-            onClick={onAdvanceSet}
-            className="btn-press shrink-0 rounded-xl bg-white/10 px-3 py-2 text-xs font-bold text-white flex items-center gap-1"
+            onClick={() => { if (locked) { vibrate(15); return; } onAdvanceSet(); }}
+            className={`btn-press shrink-0 rounded-xl bg-white/10 px-3 py-2 text-xs font-bold text-white flex items-center gap-1 ${locked ? 'opacity-40' : ''}`}
           >
+            {locked && <Icon name="Lock" size={11} />}
             {vb.set < 3 ? 'Next Set' : 'End Set 3'} <Icon name="ChevronRight" size={14} />
           </button>
         )}
@@ -2021,8 +2111,11 @@ function VolleyballSetTracker({ vb, teamADisplay, teamBDisplay, onAdvanceSet, on
   );
 }
 
-function Volleyball({ globalTimer, onBack, roomSession }) {
+function Volleyball({ globalTimer, onBack, roomSession, permissions, consult }) {
   const [vb, setVb] = useLocalStorage(VB_KEY, defaultVolleyball());
+  const canScore = permissions.canControl('score');
+  const canPossession = permissions.canControl('possession');
+  const canPeriod = permissions.canControl('period');
   // Merge synced data onto defaultVolleyball() — see useGlobalTimer for why.
   const setVbSynced = useCallback((v) => setVb((s) => ({ ...defaultVolleyball(), ...v })), [setVb]);
   useRoomSync(roomSession.roomCode, 'volleyball', vb, setVbSynced);
@@ -2031,6 +2124,7 @@ function Volleyball({ globalTimer, onBack, roomSession }) {
   const [endGameOpen, setEndGameOpen] = useState(false);
 
   const point = () => {
+    if (!canScore) { vibrate(15); return; }
     setVb((s) => {
       if (s.set !== s.liveSet || s.matchFinished) return s;
       const { aEligible, bEligible } = pointServeEligibility(s);
@@ -2046,6 +2140,7 @@ function Volleyball({ globalTimer, onBack, roomSession }) {
   };
 
   const sideOut = () => {
+    if (!canPossession) { vibrate(15); return; }
     setVb((s) => {
       if (s.set !== s.liveSet || s.matchFinished) return s;
       const { aEligible, bEligible } = pointServeEligibility(s);
@@ -2061,13 +2156,16 @@ function Volleyball({ globalTimer, onBack, roomSession }) {
   };
 
   const undo = (team) => {
+    if (!canScore) { vibrate(15); return; }
     setVb((s) => {
       if (s.set !== s.liveSet || s.matchFinished) return s;
       return { ...s, [team === 'A' ? 'scoreA' : 'scoreB']: Math.max(0, (team === 'A' ? s.scoreA : s.scoreB) - 1) };
     });
   };
 
-  const advanceSet = () => setVb((s) => {
+  const advanceSet = () => {
+    if (!canPeriod) { vibrate(15); return; }
+    setVb((s) => {
     if (s.set !== s.liveSet || s.matchFinished) return s;
     // Snapshot everything about this set as it stood right now — team names, colors,
     // and final score — so navigating back to view it later is correct regardless of
@@ -2106,7 +2204,8 @@ function Volleyball({ globalTimer, onBack, roomSession }) {
       liveSet: nextSet,
       setHistory,
     };
-  });
+    });
+  };
 
   const viewSet = (n) => setVb((s) => ({ ...s, set: Math.max(1, Math.min(s.liveSet, n)) }));
 
@@ -2156,6 +2255,7 @@ function Volleyball({ globalTimer, onBack, roomSession }) {
     if (appSettings.volleyballTapToScore && vb.serving === team) {
       point();
     } else {
+      if (!canPossession) { vibrate(15); return; }
       setServer(team);
     }
   };
@@ -2207,9 +2307,9 @@ function Volleyball({ globalTimer, onBack, roomSession }) {
   return (
     <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:min-h-dvh">
       <EndGamePill onClick={() => setEndGameOpen(true)} />
-      <Header title="Volleyball" onBack={onBack} onSettings={() => setSettingsOpen(true)} />
+      <Header title="Volleyball" onBack={onBack} onSettings={() => setSettingsOpen(true)} extra={<ConsultSlot roomSession={roomSession} consult={consult} />} />
 
-      <VolleyballSetTracker vb={vb} teamADisplay={teamADisplay} teamBDisplay={teamBDisplay} onAdvanceSet={advanceSet} onViewSet={viewSet} />
+      <VolleyballSetTracker vb={vb} teamADisplay={teamADisplay} teamBDisplay={teamBDisplay} onAdvanceSet={advanceSet} onViewSet={viewSet} locked={!canPeriod} />
 
       <div className="flex items-center justify-end mb-2 landscape:mb-1 px-1 shrink-0">
         <div className="text-white/40 text-xs font-extrabold tracking-widest">STREAK {vb.streak}</div>
@@ -2263,12 +2363,12 @@ function Volleyball({ globalTimer, onBack, roomSession }) {
 
       {isLive ? (
         <div className="grid grid-cols-2 gap-3 landscape:gap-2 shrink-0">
-          <BigButton onClick={sideOut} className="rounded-3xl bg-red-500/15 border-2 border-red-500 py-7 landscape:py-3 text-red-400 font-extrabold text-xl landscape:text-base flex flex-col landscape:flex-row items-center gap-1 landscape:gap-2 justify-center">
-            <Icon name="ArrowLeftRight" size={26} />
+          <BigButton onClick={sideOut} className={`rounded-3xl bg-red-500/15 border-2 border-red-500 py-7 landscape:py-3 text-red-400 font-extrabold text-xl landscape:text-base flex flex-col landscape:flex-row items-center gap-1 landscape:gap-2 justify-center ${!canPossession ? 'opacity-40 saturate-[.4]' : ''}`}>
+            <Icon name={canPossession ? 'ArrowLeftRight' : 'Lock'} size={26} />
             Side Out
           </BigButton>
-          <BigButton onClick={point} className="rounded-3xl bg-emerald-400 py-7 landscape:py-3 text-black font-extrabold text-xl landscape:text-base flex flex-col landscape:flex-row items-center gap-1 landscape:gap-2 justify-center">
-            <Icon name="Plus" size={26} />
+          <BigButton onClick={point} className={`rounded-3xl bg-emerald-400 py-7 landscape:py-3 text-black font-extrabold text-xl landscape:text-base flex flex-col landscape:flex-row items-center gap-1 landscape:gap-2 justify-center ${!canScore ? 'opacity-40 saturate-[.4]' : ''}`}>
+            <Icon name={canScore ? 'Plus' : 'Lock'} size={26} />
             Point
           </BigButton>
         </div>
@@ -2366,7 +2466,7 @@ function Volleyball({ globalTimer, onBack, roomSession }) {
         >
           Reset Match
         </BigButton>
-        <MultiRefSyncButton roomSession={roomSession} />
+        <MultiRefSyncButton roomSession={roomSession} permissions={permissions} />
         <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
           Done
         </BigButton>
@@ -2402,8 +2502,11 @@ function defaultFootball() {
   };
 }
 
-function Football({ globalTimer, onBack, roomSession }) {
+function Football({ globalTimer, onBack, roomSession, permissions, consult }) {
   const [fb, setFb] = useLocalStorage(FB_KEY, defaultFootball());
+  const canScore = permissions.canControl('score');
+  const canTimer = permissions.canControl('timer');
+  const canPeriod = permissions.canControl('period');
   // Merge synced data onto defaultFootball() — see useGlobalTimer for why.
   const setFbSynced = useCallback((v) => setFb((s) => ({ ...defaultFootball(), ...v })), [setFb]);
   useRoomSync(roomSession.roomCode, 'football', fb, setFbSynced);
@@ -2411,15 +2514,18 @@ function Football({ globalTimer, onBack, roomSession }) {
   const [endGameOpen, setEndGameOpen] = useState(false);
 
   const addPoint = (team) => {
+    if (!canScore) { vibrate(15); return; }
     setFb((s) => ({ ...s, [team === 'A' ? 'scoreA' : 'scoreB']: (team === 'A' ? s.scoreA : s.scoreB) + 1 }));
     vibrate(30);
   };
 
   const undo = (team) => {
+    if (!canScore) { vibrate(15); return; }
     setFb((s) => ({ ...s, [team === 'A' ? 'scoreA' : 'scoreB']: Math.max(0, (team === 'A' ? s.scoreA : s.scoreB) - 1) }));
   };
 
   const useTimeout = (team) => {
+    if (!canPeriod) { vibrate(15); return; }
     setFb((s) => {
       const key = team === 'A' ? 'timeoutsA' : 'timeoutsB';
       if (s[key] <= 0) return s;
@@ -2429,6 +2535,7 @@ function Football({ globalTimer, onBack, roomSession }) {
   };
 
   const restoreTimeout = (team) => {
+    if (!canPeriod) { vibrate(15); return; }
     setFb((s) => {
       const key = team === 'A' ? 'timeoutsA' : 'timeoutsB';
       if (s[key] >= s.timeoutCount) return s;
@@ -2436,6 +2543,11 @@ function Football({ globalTimer, onBack, roomSession }) {
     });
   };
 
+  // Not gated by canPeriod itself — it's also called by the timer-finished
+  // auto-advance effect below, which must keep firing on every device
+  // regardless of lock state (it's a local reaction to synced timer state,
+  // not a control a guest is exercising). The chevron buttons that let a
+  // ref manually change halves check canPeriod before calling this.
   const changeHalf = (delta) => {
     setFb((s) => {
       const half = Math.max(1, s.half + delta);
@@ -2477,7 +2589,7 @@ function Football({ globalTimer, onBack, roomSession }) {
               key={i}
               type="button"
               onClick={(e) => { e.stopPropagation(); i < remaining ? useTimeout(team) : restoreTimeout(team); }}
-              className="btn-press flex items-center justify-center w-8 h-8 landscape:w-6 landscape:h-6 shrink-0"
+              className={`btn-press flex items-center justify-center w-8 h-8 landscape:w-6 landscape:h-6 shrink-0 ${!canPeriod ? 'opacity-40' : ''}`}
             >
               <span className={`block w-4 h-4 landscape:w-3 landscape:h-3 rounded-full border ${i < remaining ? dotFill : `${dotEmpty} bg-transparent`}`} />
             </button>
@@ -2490,8 +2602,8 @@ function Football({ globalTimer, onBack, roomSession }) {
   return (
     <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:min-h-dvh">
       <EndGamePill onClick={() => setEndGameOpen(true)} />
-      <Header title="Football" onBack={onBack} onSettings={() => setSettingsOpen(true)} />
-      <TimerBar globalTimer={globalTimer} />
+      <Header title="Football" onBack={onBack} onSettings={() => setSettingsOpen(true)} extra={<ConsultSlot roomSession={roomSession} consult={consult} />} />
+      <TimerBar globalTimer={globalTimer} locked={!canTimer} />
 
       <div className="flex flex-col landscape:flex-row gap-3 landscape:gap-2 flex-1 mb-4 landscape:mb-2 landscape:min-h-0" style={{ minHeight: '48vh' }}>
         <ScoreHalf
@@ -2502,6 +2614,7 @@ function Football({ globalTimer, onBack, roomSession }) {
           scoreClassName="text-7xl"
           footer={<TimeoutFooter team="A" />}
           color={fb.colorA}
+          hostLocked={!canScore}
         />
         <ScoreHalf
           name={displayTeamName(fb.teamB, 'B')}
@@ -2511,11 +2624,12 @@ function Football({ globalTimer, onBack, roomSession }) {
           scoreClassName="text-7xl"
           footer={<TimeoutFooter team="B" />}
           color={fb.colorB}
+          hostLocked={!canScore}
         />
       </div>
 
       <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 landscape:py-2 px-5 flex items-center justify-between shrink-0">
-        <IconButton name="ChevronLeft" onClick={() => changeHalf(-1)} label="Previous half" />
+        <IconButton name="ChevronLeft" onClick={() => { if (!canPeriod) { vibrate(15); return; } changeHalf(-1); }} label="Previous half" />
         <div className="text-center">
           <div className="text-xs font-extrabold tracking-widest text-white/40">HALF</div>
           <div className="text-3xl landscape:text-xl font-black tabular">
@@ -2523,7 +2637,7 @@ function Football({ globalTimer, onBack, roomSession }) {
             <span className="text-white/30 text-lg">/2</span>
           </div>
         </div>
-        <IconButton name="ChevronRight" onClick={() => changeHalf(1)} label="Next half" />
+        <IconButton name="ChevronRight" onClick={() => { if (!canPeriod) { vibrate(15); return; } changeHalf(1); }} label="Next half" />
       </div>
 
       <Sheet open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Football Settings">
@@ -2564,7 +2678,7 @@ function Football({ globalTimer, onBack, roomSession }) {
         >
           Reset Game
         </BigButton>
-        <MultiRefSyncButton roomSession={roomSession} />
+        <MultiRefSyncButton roomSession={roomSession} permissions={permissions} />
         <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
           Done
         </BigButton>
@@ -2611,10 +2725,14 @@ function advanceHalfInning(s) {
   return { ...s, half: 'Top', period: s.period + 1 };
 }
 
-function Universal({ sport, globalTimer, onBack, roomSession }) {
+function Universal({ sport, globalTimer, onBack, roomSession, permissions, consult }) {
   const cfg = UNIVERSAL_CONFIG[sport];
   const key = `refcourt_${sport}_v1`;
   const [g, setG] = useLocalStorage(key, defaultUniversal());
+  const canScore = permissions.canControl('score');
+  const canPossession = permissions.canControl('possession');
+  const canTimer = permissions.canControl('timer');
+  const canPeriod = permissions.canControl('period');
   // Merge synced data onto defaultUniversal() — see useGlobalTimer for why.
   const setGSynced = useCallback((v) => setG((s) => ({ ...defaultUniversal(), ...v })), [setG]);
   useRoomSync(roomSession.roomCode, sport, g, setGSynced);
@@ -2622,13 +2740,19 @@ function Universal({ sport, globalTimer, onBack, roomSession }) {
   const [endGameOpen, setEndGameOpen] = useState(false);
 
   const addPoint = (team) => {
+    if (!canScore) { vibrate(15); return; }
     setG((s) => ({ ...s, [team === 'A' ? 'scoreA' : 'scoreB']: (team === 'A' ? s.scoreA : s.scoreB) + 1 }));
     vibrate(30);
   };
   const undo = (team) => {
+    if (!canScore) { vibrate(15); return; }
     setG((s) => ({ ...s, [team === 'A' ? 'scoreA' : 'scoreB']: Math.max(0, (team === 'A' ? s.scoreA : s.scoreB) - 1) }));
   };
 
+  // Not gated by canPeriod itself — also called by the timer-finished
+  // auto-advance effect below (see Football's changeHalf for why). The
+  // chevron buttons that let a ref manually change periods check canPeriod
+  // before calling this.
   const changePeriod = (delta) => {
     setG((s) => {
       const next = s.period + delta;
@@ -2654,7 +2778,10 @@ function Universal({ sport, globalTimer, onBack, roomSession }) {
     timerJustFinishedRef.current = finished;
   }, [globalTimer.timer.finished, sport]);
 
-  const toggleHalf = () => setG((s) => ({ ...s, half: s.half === 'Top' ? 'Bottom' : 'Top' }));
+  const toggleHalf = () => {
+    if (!canPossession) { vibrate(15); return; }
+    setG((s) => ({ ...s, half: s.half === 'Top' ? 'Bottom' : 'Top' }));
+  };
   const swapTopBottom = () => setG((s) => ({ ...s, topTeam: s.topTeam === 'A' ? 'B' : 'A' }));
 
   const topTeam = g.topTeam || 'A';
@@ -2679,6 +2806,7 @@ function Universal({ sport, globalTimer, onBack, roomSession }) {
   }, [banner]);
 
   const addBall = () => {
+    if (!canScore) { vibrate(15); return; }
     vibrate(20);
     setG((s) => {
       const balls = (s.balls || 0) + 1;
@@ -2691,6 +2819,7 @@ function Universal({ sport, globalTimer, onBack, roomSession }) {
   };
 
   const addStrike = () => {
+    if (!canScore) { vibrate(15); return; }
     vibrate(20);
     setG((s) => {
       const strikes = (s.strikes || 0) + 1;
@@ -2708,6 +2837,7 @@ function Universal({ sport, globalTimer, onBack, roomSession }) {
   };
 
   const addOut = () => {
+    if (!canScore) { vibrate(15); return; }
     vibrate(20);
     setG((s) => {
       const outs = (s.outs || 0) + 1;
@@ -2719,7 +2849,10 @@ function Universal({ sport, globalTimer, onBack, roomSession }) {
     });
   };
 
-  const resetCount = () => setG((s) => ({ ...s, balls: 0, strikes: 0 }));
+  const resetCount = () => {
+    if (!canScore) { vibrate(15); return; }
+    setG((s) => ({ ...s, balls: 0, strikes: 0 }));
+  };
 
   const periodUnit = sport === 'hockey' && g.hockeyFormat === 'halves' ? 'Half' : cfg.unit;
   const periodMaxUnit = sport === 'hockey' ? hockeyMaxUnit(g.hockeyFormat) : cfg.maxUnit;
@@ -2734,8 +2867,8 @@ function Universal({ sport, globalTimer, onBack, roomSession }) {
         </div>
       )}
       <EndGamePill onClick={() => setEndGameOpen(true)} />
-      <Header title={cfg.title} onBack={onBack} onSettings={() => setSettingsOpen(true)} />
-      {sport !== 'baseball' && <TimerBar globalTimer={globalTimer} periodCount={periodMaxUnit} unitLabel={periodUnit} />}
+      <Header title={cfg.title} onBack={onBack} onSettings={() => setSettingsOpen(true)} extra={<ConsultSlot roomSession={roomSession} consult={consult} />} />
+      {sport !== 'baseball' && <TimerBar globalTimer={globalTimer} periodCount={periodMaxUnit} unitLabel={periodUnit} locked={!canTimer} />}
 
       <div className="flex flex-col landscape:flex-row gap-3 landscape:gap-2 flex-1 mb-4 landscape:mb-2 landscape:min-h-0" style={{ minHeight: '48vh' }}>
         <ScoreHalf
@@ -2745,6 +2878,7 @@ function Universal({ sport, globalTimer, onBack, roomSession }) {
           onUndo={() => undo('A')}
           color={g.colorA}
           locked={sport === 'baseball' && battingTeam !== 'A'}
+          hostLocked={!canScore}
         />
         <ScoreHalf
           name={displayTeamName(g.teamB, 'B')}
@@ -2753,11 +2887,12 @@ function Universal({ sport, globalTimer, onBack, roomSession }) {
           onUndo={() => undo('B')}
           color={g.colorB}
           locked={sport === 'baseball' && battingTeam !== 'B'}
+          hostLocked={!canScore}
         />
       </div>
 
       <div className="rounded-2xl bg-zinc-900 border border-white/10 py-4 landscape:py-2 px-5 flex items-center justify-between shrink-0">
-        <IconButton name="ChevronLeft" onClick={() => changePeriod(-1)} label="Previous period" />
+        <IconButton name="ChevronLeft" onClick={() => { if (!canPeriod) { vibrate(15); return; } changePeriod(-1); }} label="Previous period" />
         <div className="text-center">
           <div className="text-xs font-extrabold tracking-widest text-white/40">{periodUnit.toUpperCase()}</div>
           <div className="text-3xl landscape:text-xl font-black tabular">
@@ -2765,15 +2900,15 @@ function Universal({ sport, globalTimer, onBack, roomSession }) {
             <span className="text-white/30 text-lg">/{periodMaxUnit}</span>
           </div>
         </div>
-        <IconButton name="ChevronRight" onClick={() => changePeriod(1)} label="Next period" />
+        <IconButton name="ChevronRight" onClick={() => { if (!canPeriod) { vibrate(15); return; } changePeriod(1); }} label="Next period" />
       </div>
 
       {sport === 'baseball' && (
         <button
           onClick={toggleHalf}
-          className="btn-press w-full mt-3 landscape:mt-1.5 rounded-2xl bg-zinc-900 border-2 border-white/10 py-5 landscape:py-2 px-5 flex items-center justify-center gap-2 active:bg-white/10 shrink-0"
+          className={`btn-press w-full mt-3 landscape:mt-1.5 rounded-2xl bg-zinc-900 border-2 border-white/10 py-5 landscape:py-2 px-5 flex items-center justify-center gap-2 active:bg-white/10 shrink-0 ${!canPossession ? 'opacity-50' : ''}`}
         >
-          <Icon name="ArrowLeftRight" size={20} className="text-white/40" />
+          <Icon name={canPossession ? 'ArrowLeftRight' : 'Lock'} size={20} className="text-white/40" />
           <span className="text-lg landscape:text-sm font-extrabold tracking-wide">
             {g.half.toUpperCase()} &middot; {battingTeamName} BATTING
           </span>
@@ -2799,7 +2934,7 @@ function Universal({ sport, globalTimer, onBack, roomSession }) {
             ))}
           </div>
 
-          <div className="grid grid-cols-3 gap-2 mb-2 landscape:mb-1.5">
+          <div className={`grid grid-cols-3 gap-2 mb-2 landscape:mb-1.5 ${!canScore ? 'opacity-40' : ''}`}>
             <BigButton onClick={addBall} className="rounded-2xl bg-emerald-400/15 border-2 border-emerald-400/40 text-emerald-400 py-5 landscape:py-2.5 font-extrabold text-sm">
               +BALL
             </BigButton>
@@ -2860,7 +2995,7 @@ function Universal({ sport, globalTimer, onBack, roomSession }) {
         >
           Reset Game
         </BigButton>
-        <MultiRefSyncButton roomSession={roomSession} />
+        <MultiRefSyncButton roomSession={roomSession} permissions={permissions} />
         <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
           Done
         </BigButton>
@@ -3031,8 +3166,11 @@ function BasketballHistoryPanel({ open, onClose, history, bk, onDismissEntry }) 
   );
 }
 
-function Basketball({ globalTimer, onBack, roomSession }) {
+function Basketball({ globalTimer, onBack, roomSession, permissions, consult }) {
   const [bk, setBk] = useLocalStorage(BK_KEY, defaultBasketball());
+  const canScore = permissions.canControl('score');
+  const canTimer = permissions.canControl('timer');
+  const canPeriod = permissions.canControl('period');
   // Merge synced data onto defaultBasketball() — see useGlobalTimer for why.
   const setBkSynced = useCallback((v) => setBk((s) => ({ ...defaultBasketball(), ...v })), [setBk]);
   useRoomSync(roomSession.roomCode, 'basketball', bk, setBkSynced);
@@ -3048,6 +3186,7 @@ function Basketball({ globalTimer, onBack, roomSession }) {
   }, [historyOpen]);
 
   const addScore = (team, pts) => {
+    if (!canScore) { vibrate(15); return; }
     const periodLabel = basketballPeriodLabel(bk);
     const clockLabel = globalTimer && globalTimer.timer.configured && !globalTimer.timer.finished
       ? formatClock(globalTimer.remainingMs / 1000)
@@ -3061,10 +3200,12 @@ function Basketball({ globalTimer, onBack, roomSession }) {
   };
 
   const adjustFouls = (team, delta) => {
+    if (!canScore) { vibrate(15); return; }
     setBk((s) => ({ ...s, [team === 'A' ? 'foulsA' : 'foulsB']: Math.max(0, (team === 'A' ? s.foulsA : s.foulsB) + delta) }));
   };
 
   const undoLast = () => {
+    if (!canScore) { vibrate(15); return; }
     setBk((s) => {
       if (s.history.length === 0) return s;
       const last = s.history[s.history.length - 1];
@@ -3080,8 +3221,13 @@ function Basketball({ globalTimer, onBack, roomSession }) {
     setBk((s) => ({ ...s, history: s.history.filter((e) => e !== entry) }));
   };
 
-  const setHalf = (half) => setBk((s) => ({ ...s, half }));
+  const setHalf = (half) => {
+    if (!canPeriod) { vibrate(15); return; }
+    setBk((s) => ({ ...s, half }));
+  };
 
+  // Not gated by canScore itself — also called by the timer-finished
+  // auto-advance effect below (see Football's changeHalf for why).
   const advanceHalf = () => setBk((s) => {
     const max = s.periodMode === 'quarters' ? 4 : 2;
     return { ...s, half: Math.min(max, s.half + 1) };
@@ -3102,6 +3248,7 @@ function Basketball({ globalTimer, onBack, roomSession }) {
   }, [globalTimer.timer.finished]);
 
   const undo = (team) => {
+    if (!canScore) { vibrate(15); return; }
     setBk((s) => ({ ...s, [team === 'A' ? 'scoreA' : 'scoreB']: Math.max(0, (team === 'A' ? s.scoreA : s.scoreB) - 1) }));
   };
 
@@ -3118,7 +3265,7 @@ function Basketball({ globalTimer, onBack, roomSession }) {
           role="button"
           onClick={() => undo(team)}
           aria-label={`Subtract 1 from ${name}`}
-          className={`btn-press absolute top-3 landscape:top-1.5 left-3 w-10 h-10 landscape:w-8 landscape:h-8 rounded-full ${c.overlay} ${c.text} flex items-center justify-center`}
+          className={`btn-press absolute top-3 landscape:top-1.5 left-3 w-10 h-10 landscape:w-8 landscape:h-8 rounded-full ${c.overlay} ${c.text} flex items-center justify-center ${!canScore ? 'opacity-40' : ''}`}
         >
           <Icon name="Minus" size={16} />
         </div>
@@ -3132,7 +3279,7 @@ function Basketball({ globalTimer, onBack, roomSession }) {
         </div>
         <div className={`text-lg landscape:text-sm font-bold ${c.text} opacity-70 truncate max-w-full`}>{name}</div>
         <div className={`text-7xl landscape:text-5xl font-black tabular ${c.text}`}>{score}</div>
-        <div className="grid grid-cols-3 landscape:flex landscape:flex-row gap-2 landscape:gap-1.5 w-full">
+        <div className={`grid grid-cols-3 landscape:flex landscape:flex-row gap-2 landscape:gap-1.5 w-full ${!canScore ? 'opacity-40 saturate-[.4]' : ''}`}>
           <BigButton onClick={() => addScore(team, 1)} className={`relative rounded-2xl ${c.overlay} ${c.text} py-5 landscape:py-3 font-extrabold text-lg landscape:text-base flex-1 flex items-center justify-center`}>
             <span>+1</span>
             <span className={`absolute bottom-1.5 landscape:bottom-0.5 text-[9px] font-bold ${c.sub} tracking-widest`}>FT</span>
@@ -3174,11 +3321,12 @@ function Basketball({ globalTimer, onBack, roomSession }) {
         bk={bk}
       />
 
-      <Header title="Basketball" onBack={onBack} onSettings={() => setSettingsOpen(true)} />
+      <Header title="Basketball" onBack={onBack} onSettings={() => setSettingsOpen(true)} extra={<ConsultSlot roomSession={roomSession} consult={consult} />} />
       <TimerBar
         globalTimer={globalTimer}
         periodCount={bk.periodMode === 'quarters' ? 4 : 2}
         unitLabel={bk.periodMode === 'quarters' ? 'Quarter' : 'Half'}
+        locked={!canTimer}
       />
 
       <div className="flex flex-col landscape:flex-row gap-3 landscape:gap-2 flex-1 mb-4 landscape:mb-2 landscape:min-h-0">
@@ -3232,7 +3380,7 @@ function Basketball({ globalTimer, onBack, roomSession }) {
         >
           Reset Game
         </BigButton>
-        <MultiRefSyncButton roomSession={roomSession} />
+        <MultiRefSyncButton roomSession={roomSession} permissions={permissions} />
         <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
           Done
         </BigButton>
@@ -3324,6 +3472,8 @@ function App() {
   const [screen, setScreen] = useLocalStorage('refcourt_screen_v1', 'home');
   const roomSession = useRoomSession();
   const globalTimer = useGlobalTimer(roomSession.roomCode);
+  const permissions = useRoomPermissions(roomSession.roomCode, roomSession.role, roomSession.clientId);
+  const consult = useConsult(roomSession.roomCode, roomSession.clientId, roomSession.role);
   const [settings, setSettings] = useAppSettings();
 
   useEffect(() => {
@@ -3364,18 +3514,21 @@ function App() {
   const goHome = () => window.history.back();
 
   let content;
-  if (screen === 'home') content = <Home onSelect={goTo} settings={settings} setSettings={setSettings} roomSession={roomSession} />;
-  else if (screen === 'volleyball') content = <Volleyball globalTimer={globalTimer} onBack={goHome} roomSession={roomSession} />;
-  else if (screen === 'football') content = <Football globalTimer={globalTimer} onBack={goHome} roomSession={roomSession} />;
-  else if (screen === 'basketball') content = <Basketball globalTimer={globalTimer} onBack={goHome} roomSession={roomSession} />;
-  else if (UNIVERSAL_CONFIG[screen]) content = <Universal sport={screen} globalTimer={globalTimer} onBack={goHome} roomSession={roomSession} />;
-  else content = <Home onSelect={goTo} settings={settings} setSettings={setSettings} roomSession={roomSession} />;
+  if (screen === 'home') content = <Home onSelect={goTo} settings={settings} setSettings={setSettings} roomSession={roomSession} permissions={permissions} />;
+  else if (screen === 'volleyball') content = <Volleyball globalTimer={globalTimer} onBack={goHome} roomSession={roomSession} permissions={permissions} consult={consult} />;
+  else if (screen === 'football') content = <Football globalTimer={globalTimer} onBack={goHome} roomSession={roomSession} permissions={permissions} consult={consult} />;
+  else if (screen === 'basketball') content = <Basketball globalTimer={globalTimer} onBack={goHome} roomSession={roomSession} permissions={permissions} consult={consult} />;
+  else if (UNIVERSAL_CONFIG[screen]) content = <Universal sport={screen} globalTimer={globalTimer} onBack={goHome} roomSession={roomSession} permissions={permissions} consult={consult} />;
+  else content = <Home onSelect={goTo} settings={settings} setSettings={setSettings} roomSession={roomSession} permissions={permissions} />;
 
   return (
     <div className="h-dvh overflow-hidden">
       <div className="h-full overflow-y-auto overscroll-y-auto">
         <ErrorBoundary key={screen}>{content}</ErrorBoundary>
       </div>
+      {isFirebaseConfigured && roomSession.roomCode && (
+        <ConsultOverlay consult={consult.consult} respond={consult.respond} clientId={roomSession.clientId} />
+      )}
       {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
     </div>
   );
