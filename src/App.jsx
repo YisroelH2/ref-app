@@ -7,7 +7,7 @@ import { useRoomSession } from './lib/roomSession.js';
 import { useRoomSync } from './lib/useRoomSync.js';
 import { isFirebaseConfigured } from './firebaseConfig.js';
 
-const APP_VERSION = '4.0.0';
+const APP_VERSION = '4.0.1';
 
 
 
@@ -1553,19 +1553,26 @@ function ScheduleSheet({ open, onClose, settings, setSettings }) {
 // `bare` skips the "Multi-Ref Sync" section label — used when this is
 // already the sole content of a sheet titled "Multi-Ref Sync" (the small
 // per-game button below), so the heading isn't repeated right under itself.
+// Defined at module scope (not inside MultiRefSyncField) so it keeps a
+// stable identity across renders — an inline-defined component there would
+// get recreated every render, forcing React to unmount/remount its children
+// (including the join-code input) on every keystroke.
+function SyncSectionWrap({ bare, children }) {
+  return bare ? <div className="mb-5">{children}</div> : <Field label="Multi-Ref Sync">{children}</Field>;
+}
+
 function MultiRefSyncField({ roomSession, bare = false }) {
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [copied, setCopied] = useState(false);
-  const Wrap = ({ children }) => (bare ? <div className="mb-5">{children}</div> : <Field label="Multi-Ref Sync">{children}</Field>);
 
   if (!isFirebaseConfigured) {
     return (
-      <Wrap>
+      <SyncSectionWrap bare={bare}>
         <div className="rounded-xl bg-white/5 border border-white/10 px-4 py-3">
           <span className="text-white/40 text-sm font-semibold">Not set up yet</span>
         </div>
-      </Wrap>
+      </SyncSectionWrap>
     );
   }
 
@@ -1579,7 +1586,7 @@ function MultiRefSyncField({ roomSession, bare = false }) {
       } catch (e) {}
     };
     return (
-      <Wrap>
+      <SyncSectionWrap bare={bare}>
         <div className="rounded-xl bg-white/10 px-4 py-3 flex items-center gap-3">
           <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${roomSession.connected ? 'bg-emerald-400' : 'bg-yellow-400 animate-pulse'}`} />
           <div className="min-w-0">
@@ -1609,12 +1616,12 @@ function MultiRefSyncField({ roomSession, bare = false }) {
         >
           {roomSession.role === 'host' ? 'Stop Hosting' : 'Leave Game'}
         </button>
-      </Wrap>
+      </SyncSectionWrap>
     );
   }
 
   return (
-    <Wrap>
+    <SyncSectionWrap bare={bare}>
       <div className="grid grid-cols-2 gap-2">
         <button
           type="button"
@@ -1660,7 +1667,7 @@ function MultiRefSyncField({ roomSession, bare = false }) {
       <p className="text-white/30 text-xs mt-2 leading-relaxed">
         Host a game to get a 4-digit code other refs can join — scores, the game clock, and period changes stay in sync on every connected device.
       </p>
-    </Wrap>
+    </SyncSectionWrap>
   );
 }
 
