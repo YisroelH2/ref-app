@@ -49,11 +49,21 @@ export function useRoomSync(roomCode, path, state, setState) {
     }
     const target = targetRef.current;
     if (!target) return;
-    target.dbFns.set(target.nodeRef, {
-      data: latestStateRef.current,
-      _origin: clientIdRef.current,
-      _ts: Date.now(),
-    });
+    // Firebase's set() throws synchronously on values containing `undefined`
+    // and can also reject (e.g. rules/network) — swallow either so a bad
+    // local write only skips that sync tick instead of surfacing as an
+    // unhandled rejection or crashing the caller.
+    try {
+      Promise.resolve(
+        target.dbFns.set(target.nodeRef, {
+          data: latestStateRef.current,
+          _origin: clientIdRef.current,
+          _ts: Date.now(),
+        })
+      ).catch((err) => console.warn('[useRoomSync] push failed', err));
+    } catch (err) {
+      console.warn('[useRoomSync] push failed', err);
+    }
   }, []);
 
   // Subscribe to the room path and seed-or-adopt once on (re)connect: if the
@@ -85,7 +95,13 @@ export function useRoomSync(roomCode, path, state, setState) {
         setState(remote.data);
       } else {
         writeEditTs(path, Date.now());
-        dbFns.set(nodeRef, { data: latestStateRef.current, _origin: clientIdRef.current, _ts: Date.now() });
+        try {
+          Promise.resolve(
+            dbFns.set(nodeRef, { data: latestStateRef.current, _origin: clientIdRef.current, _ts: Date.now() })
+          ).catch((err) => console.warn('[useRoomSync] initial push failed', err));
+        } catch (err) {
+          console.warn('[useRoomSync] initial push failed', err);
+        }
       }
 
       if (cancelled) return;

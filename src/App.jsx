@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, forwardRef } from 'react';
+import { useState, useEffect, useRef, useCallback, forwardRef, Component } from 'react';
 import Icon from './components/Icon.jsx';
 import IconButton from './components/IconButton.jsx';
 import Sheet from './components/Sheet.jsx';
@@ -7,7 +7,7 @@ import { useRoomSession } from './lib/roomSession.js';
 import { useRoomSync } from './lib/useRoomSync.js';
 import { isFirebaseConfigured } from './firebaseConfig.js';
 
-const APP_VERSION = '4.0.1';
+const APP_VERSION = '4.0.2';
 
 
 
@@ -509,7 +509,14 @@ function defaultTimer() {
 
 function useGlobalTimer(roomCode) {
   const [timer, setTimer] = useLocalStorage(TIMER_KEY, defaultTimer());
-  useRoomSync(roomCode, 'timer', timer, setTimer);
+  // Merge onto defaultTimer() rather than adopting the remote value verbatim
+  // — a peer on a different app version (e.g. a stale service-worker cache)
+  // could sync a shape missing fields this build expects, and a raw
+  // undefined would crash rendering. Merging guarantees every expected key
+  // is always present. useCallback keeps this setter's identity stable so
+  // useRoomSync's effect (which depends on it) doesn't re-subscribe every render.
+  const setTimerSynced = useCallback((v) => setTimer((s) => ({ ...defaultTimer(), ...v })), [setTimer]);
+  useRoomSync(roomCode, 'timer', timer, setTimerSynced);
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -2016,7 +2023,9 @@ function VolleyballSetTracker({ vb, teamADisplay, teamBDisplay, onAdvanceSet, on
 
 function Volleyball({ globalTimer, onBack, roomSession }) {
   const [vb, setVb] = useLocalStorage(VB_KEY, defaultVolleyball());
-  useRoomSync(roomSession.roomCode, 'volleyball', vb, setVb);
+  // Merge synced data onto defaultVolleyball() — see useGlobalTimer for why.
+  const setVbSynced = useCallback((v) => setVb((s) => ({ ...defaultVolleyball(), ...v })), [setVb]);
+  useRoomSync(roomSession.roomCode, 'volleyball', vb, setVbSynced);
   const [appSettings] = useLocalStorage(APP_SETTINGS_KEY, defaultAppSettings());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [endGameOpen, setEndGameOpen] = useState(false);
@@ -2395,7 +2404,9 @@ function defaultFootball() {
 
 function Football({ globalTimer, onBack, roomSession }) {
   const [fb, setFb] = useLocalStorage(FB_KEY, defaultFootball());
-  useRoomSync(roomSession.roomCode, 'football', fb, setFb);
+  // Merge synced data onto defaultFootball() — see useGlobalTimer for why.
+  const setFbSynced = useCallback((v) => setFb((s) => ({ ...defaultFootball(), ...v })), [setFb]);
+  useRoomSync(roomSession.roomCode, 'football', fb, setFbSynced);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [endGameOpen, setEndGameOpen] = useState(false);
 
@@ -2604,7 +2615,9 @@ function Universal({ sport, globalTimer, onBack, roomSession }) {
   const cfg = UNIVERSAL_CONFIG[sport];
   const key = `refcourt_${sport}_v1`;
   const [g, setG] = useLocalStorage(key, defaultUniversal());
-  useRoomSync(roomSession.roomCode, sport, g, setG);
+  // Merge synced data onto defaultUniversal() — see useGlobalTimer for why.
+  const setGSynced = useCallback((v) => setG((s) => ({ ...defaultUniversal(), ...v })), [setG]);
+  useRoomSync(roomSession.roomCode, sport, g, setGSynced);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [endGameOpen, setEndGameOpen] = useState(false);
 
@@ -3020,7 +3033,9 @@ function BasketballHistoryPanel({ open, onClose, history, bk, onDismissEntry }) 
 
 function Basketball({ globalTimer, onBack, roomSession }) {
   const [bk, setBk] = useLocalStorage(BK_KEY, defaultBasketball());
-  useRoomSync(roomSession.roomCode, 'basketball', bk, setBk);
+  // Merge synced data onto defaultBasketball() — see useGlobalTimer for why.
+  const setBkSynced = useCallback((v) => setBk((s) => ({ ...defaultBasketball(), ...v })), [setBk]);
+  useRoomSync(roomSession.roomCode, 'basketball', bk, setBkSynced);
   const [appSettings] = useLocalStorage(APP_SETTINGS_KEY, defaultAppSettings());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [endGameOpen, setEndGameOpen] = useState(false);
@@ -3267,6 +3282,43 @@ function SplashScreen({ onDone }) {
 
 /* ============================== APP ============================== */
 
+// Guards against a bad screen render leaving the whole app permanently
+// blank — most likely trigger is Multi-Ref Sync adopting a shape it
+// doesn't recognize (e.g. a peer on a stale cached build). Keyed by
+// `screen` in App() below so navigating back to Home clears the error.
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    console.error('[ErrorBoundary] caught:', error, info);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="h-dvh flex flex-col items-center justify-center gap-4 bg-black text-white px-6 text-center">
+          <div className="text-lg font-extrabold">Something went wrong</div>
+          <p className="text-white/50 text-sm max-w-xs">
+            {String((this.state.error && this.state.error.message) || this.state.error)}
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="btn-press rounded-xl bg-emerald-400 text-black px-6 py-3 font-extrabold"
+          >
+            Reload
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [screen, setScreen] = useLocalStorage('refcourt_screen_v1', 'home');
@@ -3321,7 +3373,9 @@ function App() {
 
   return (
     <div className="h-dvh overflow-hidden">
-      <div className="h-full overflow-y-auto overscroll-y-auto">{content}</div>
+      <div className="h-full overflow-y-auto overscroll-y-auto">
+        <ErrorBoundary key={screen}>{content}</ErrorBoundary>
+      </div>
       {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
     </div>
   );
