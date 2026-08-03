@@ -12,7 +12,7 @@ import ConsultButton from './components/ConsultButton.jsx';
 import ConsultOverlay from './components/ConsultOverlay.jsx';
 import { isFirebaseConfigured } from './firebaseConfig.js';
 
-const APP_VERSION = '4.1.0';
+const APP_VERSION = '4.1.1';
 
 
 
@@ -1234,7 +1234,7 @@ function ScoreHalf({ name, score, onScore, onUndo, footer, scoreClassName = 'tex
 
 /* ============================== SHARED END GAME ============================== */
 
-function EndGameSheet({ open, onClose, sportLabel, teamA: teamARaw, teamB: teamBRaw, scoreA, scoreB, globalTimer, winnerOverride }) {
+function EndGameSheet({ open, onClose, sportLabel, teamA: teamARaw, teamB: teamBRaw, scoreA, scoreB, globalTimer, winnerOverride, onReset, resetLabel = 'Reset Game' }) {
   const teamA = displayTeamName(teamARaw, 'A');
   const teamB = displayTeamName(teamBRaw, 'B');
   const [appSettings] = useLocalStorage(APP_SETTINGS_KEY, defaultAppSettings());
@@ -1353,6 +1353,15 @@ function EndGameSheet({ open, onClose, sportLabel, teamA: teamARaw, teamB: teamB
           </div>
         )}
       </Field>
+
+      {onReset && (
+        <BigButton
+          onClick={() => { onReset(); onClose(); }}
+          className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-3 flex items-center justify-center gap-2"
+        >
+          <Icon name="RotateCcw" size={18} /> {resetLabel}
+        </BigButton>
+      )}
     </Sheet>
   );
 }
@@ -2482,6 +2491,8 @@ function Volleyball({ globalTimer, onBack, roomSession, permissions, consult }) 
         scoreB={vb.scoreB}
         globalTimer={globalTimer}
         winnerOverride={matchWinnerOverride}
+        onReset={() => setVb(defaultVolleyball())}
+        resetLabel="Reset Match"
       />
     </div>
   );
@@ -2693,6 +2704,7 @@ function Football({ globalTimer, onBack, roomSession, permissions, consult }) {
         scoreA={fb.scoreA}
         scoreB={fb.scoreB}
         globalTimer={globalTimer}
+        onReset={() => setFb(defaultFootball())}
       />
     </div>
   );
@@ -3010,6 +3022,7 @@ function Universal({ sport, globalTimer, onBack, roomSession, permissions, consu
         scoreA={g.scoreA}
         scoreB={g.scoreB}
         globalTimer={globalTimer}
+        onReset={() => setG(defaultUniversal())}
       />
     </div>
   );
@@ -3395,6 +3408,7 @@ function Basketball({ globalTimer, onBack, roomSession, permissions, consult }) 
         scoreA={bk.scoreA}
         scoreB={bk.scoreB}
         globalTimer={globalTimer}
+        onReset={() => setBk(defaultBasketball())}
       />
     </div>
   );
