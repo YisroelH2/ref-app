@@ -1791,6 +1791,7 @@ function defaultVolleyball() {
     teamA: '', teamB: '', colorA: null, colorB: null, scoreA: 0, scoreB: 0, serving: 'A', streak: 0,
     set: 1,
     liveSet: 1,
+    matchFinished: false,
     regularTarget: s.volleyballRegularTarget,
     decidingTarget: s.volleyballDecidingTarget,
     setHistory: [],
@@ -1815,7 +1816,7 @@ function VolleyballSetTracker({ vb, teamADisplay, teamBDisplay, onAdvanceSet, on
   const setsWonA = setHistory.filter((e) => e && e.winner === teamADisplay).length;
   const setsWonB = setHistory.filter((e) => e && e.winner === teamBDisplay).length;
   const matchOver = setsWonA >= 2 || setsWonB >= 2;
-  const isLive = vb.set === vb.liveSet;
+  const isLive = vb.set === vb.liveSet && !vb.matchFinished;
 
   return (
     <div className="rounded-2xl bg-zinc-900 border border-white/10 p-4 landscape:p-2 mb-4 landscape:mb-2 shrink-0">
@@ -1874,7 +1875,7 @@ function Volleyball({ globalTimer, onBack }) {
 
   const point = () => {
     setVb((s) => {
-      if (s.set !== s.liveSet) return s;
+      if (s.set !== s.liveSet || s.matchFinished) return s;
       const { aEligible, bEligible } = pointServeEligibility(s);
       return {
         ...s,
@@ -1889,7 +1890,7 @@ function Volleyball({ globalTimer, onBack }) {
 
   const sideOut = () => {
     setVb((s) => {
-      if (s.set !== s.liveSet) return s;
+      if (s.set !== s.liveSet || s.matchFinished) return s;
       const { aEligible, bEligible } = pointServeEligibility(s);
       return {
         ...s,
@@ -1904,13 +1905,13 @@ function Volleyball({ globalTimer, onBack }) {
 
   const undo = (team) => {
     setVb((s) => {
-      if (s.set !== s.liveSet) return s;
+      if (s.set !== s.liveSet || s.matchFinished) return s;
       return { ...s, [team === 'A' ? 'scoreA' : 'scoreB']: Math.max(0, (team === 'A' ? s.scoreA : s.scoreB) - 1) };
     });
   };
 
   const advanceSet = () => setVb((s) => {
-    if (s.set !== s.liveSet) return s;
+    if (s.set !== s.liveSet || s.matchFinished) return s;
     // Snapshot everything about this set as it stood right now — team names, colors,
     // and final score — so navigating back to view it later is correct regardless of
     // how many more times sides get swapped afterward.
@@ -1931,7 +1932,12 @@ function Volleyball({ globalTimer, onBack }) {
       usedPointServeA: s.usedPointServeA,
       usedPointServeB: s.usedPointServeB,
     };
-    const nextSet = Math.min(3, s.set + 1);
+    if (s.set >= 3) {
+      // No set 4 to move to — freeze the final score instead of resetting it
+      // like a normal set change, so the last set's result stays on screen.
+      return { ...s, matchFinished: true, setHistory };
+    }
+    const nextSet = s.set + 1;
     return {
       ...s,
       teamA: s.teamB, teamB: s.teamA,
@@ -1952,6 +1958,13 @@ function Volleyball({ globalTimer, onBack }) {
   // the only history entry that can be restored without losing progress made
   // in a newer live set.
   const continueEditingSet = () => setVb((s) => {
+    if (s.matchFinished && s.set === s.liveSet) {
+      // Undo "End Set 3": score was frozen in place, not reset, so just
+      // un-finish the match and drop the history entry that was just saved.
+      const setHistory = [...s.setHistory];
+      setHistory[s.set - 1] = undefined;
+      return { ...s, matchFinished: false, setHistory };
+    }
     if (s.set !== s.liveSet - 1) return s;
     const entry = (s.setHistory || [])[s.set - 1];
     if (!entry) return s;
@@ -1982,7 +1995,7 @@ function Volleyball({ globalTimer, onBack }) {
   const setServer = (team) => setVb((s) => ({ ...s, serving: team, streak: 0 }));
 
   const tapTeam = (team) => {
-    if (vb.set !== vb.liveSet) return;
+    if (vb.set !== vb.liveSet || vb.matchFinished) return;
     if (appSettings.volleyballTapToScore && vb.serving === team) {
       point();
     } else {
@@ -1990,7 +2003,7 @@ function Volleyball({ globalTimer, onBack }) {
     }
   };
 
-  const isLive = vb.set === vb.liveSet;
+  const isLive = vb.set === vb.liveSet && !vb.matchFinished;
   const historyEntry = (vb.setHistory || [])[vb.set - 1];
 
   const teamADisplay = displayTeamName(vb.teamA, 'A');
@@ -2102,6 +2115,14 @@ function Volleyball({ globalTimer, onBack }) {
             Point
           </BigButton>
         </div>
+      ) : vb.matchFinished && vb.set === vb.liveSet ? (
+        <BigButton
+          onClick={continueEditingSet}
+          className="rounded-3xl bg-yellow-400/15 border-2 border-yellow-400 py-6 landscape:py-3 text-yellow-400 font-extrabold text-sm flex items-center justify-center gap-2 shrink-0"
+        >
+          <Icon name="RotateCcw" size={18} />
+          Set {vb.set} (Final) · Continue Set
+        </BigButton>
       ) : vb.set === vb.liveSet - 1 ? (
         <div className="flex gap-2 shrink-0">
           <BigButton
