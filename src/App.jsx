@@ -2,25 +2,16 @@ import { useState, useEffect, useRef, useCallback, forwardRef } from 'react';
 import Icon from './components/Icon.jsx';
 import IconButton from './components/IconButton.jsx';
 import Sheet from './components/Sheet.jsx';
+import { useLocalStorage } from './lib/useLocalStorage.js';
+import { useRoomSession } from './lib/roomSession.js';
+import { useRoomSync } from './lib/useRoomSync.js';
+import { isFirebaseConfigured } from './firebaseConfig.js';
 
-const APP_VERSION = '3.2.1';
+const APP_VERSION = '4.0.0';
 
 
 
 /* ============================== HELPERS ============================== */
-
-function useLocalStorage(key, initial) {
-  const [state, setState] = useState(() => {
-    try {
-      const raw = window.localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : initial;
-    } catch (e) { return initial; }
-  });
-  useEffect(() => {
-    try { window.localStorage.setItem(key, JSON.stringify(state)); } catch (e) {}
-  }, [key, state]);
-  return [state, setState];
-}
 
 function pad2(n) { return String(Math.floor(Math.abs(n))).padStart(2, '0'); }
 
@@ -516,8 +507,9 @@ function defaultTimer() {
   };
 }
 
-function useGlobalTimer() {
+function useGlobalTimer(roomCode) {
   const [timer, setTimer] = useLocalStorage(TIMER_KEY, defaultTimer());
+  useRoomSync(roomCode, 'timer', timer, setTimer);
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -1558,7 +1550,152 @@ function ScheduleSheet({ open, onClose, settings, setSettings }) {
   );
 }
 
-function AppSettingsSheet({ open, onClose, settings, setSettings }) {
+// `bare` skips the "Multi-Ref Sync" section label — used when this is
+// already the sole content of a sheet titled "Multi-Ref Sync" (the small
+// per-game button below), so the heading isn't repeated right under itself.
+function MultiRefSyncField({ roomSession, bare = false }) {
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [joinCode, setJoinCode] = useState('');
+  const [copied, setCopied] = useState(false);
+  const Wrap = ({ children }) => (bare ? <div className="mb-5">{children}</div> : <Field label="Multi-Ref Sync">{children}</Field>);
+
+  if (!isFirebaseConfigured) {
+    return (
+      <Wrap>
+        <div className="rounded-xl bg-white/5 border border-white/10 px-4 py-3">
+          <span className="text-white/40 text-sm font-semibold">Not set up yet</span>
+        </div>
+      </Wrap>
+    );
+  }
+
+  if (roomSession.roomCode) {
+    const shareUrl = `${window.location.origin}${window.location.pathname}?game=${roomSession.roomCode}`;
+    const copyLink = async () => {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      } catch (e) {}
+    };
+    return (
+      <Wrap>
+        <div className="rounded-xl bg-white/10 px-4 py-3 flex items-center gap-3">
+          <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${roomSession.connected ? 'bg-emerald-400' : 'bg-yellow-400 animate-pulse'}`} />
+          <div className="min-w-0">
+            <div className="text-sm font-bold truncate">
+              {roomSession.connected ? 'Connected' : 'Reconnecting…'}: Room {roomSession.roomCode}
+            </div>
+            <div className="text-white/40 text-xs font-semibold">
+              {roomSession.role === 'host' ? 'Hosting' : 'Joined as guest'}
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={copyLink}
+          className="btn-press w-full flex items-center justify-between gap-2 rounded-xl bg-white/10 px-4 py-3 mt-2"
+        >
+          <span className="text-sm font-bold text-white/70 truncate">{shareUrl}</span>
+          <Icon name={copied ? 'Check' : 'Copy'} size={16} className={`shrink-0 ${copied ? 'text-emerald-400' : 'text-white/40'}`} />
+        </button>
+
+        <button
+          type="button"
+          onClick={roomSession.leaveRoom}
+          disabled={roomSession.busy}
+          className="btn-press w-full rounded-xl bg-white/10 text-red-400 py-3 font-bold text-sm mt-3 disabled:opacity-40"
+        >
+          {roomSession.role === 'host' ? 'Stop Hosting' : 'Leave Game'}
+        </button>
+      </Wrap>
+    );
+  }
+
+  return (
+    <Wrap>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={roomSession.hostRoom}
+          disabled={roomSession.busy}
+          className="btn-press rounded-xl bg-white/10 py-3 font-bold text-sm disabled:opacity-40"
+        >
+          Host Game
+        </button>
+        <button
+          type="button"
+          onClick={() => setJoinOpen((o) => !o)}
+          className={`btn-press rounded-xl py-3 font-bold text-sm ${joinOpen ? 'bg-white text-black' : 'bg-white/10'}`}
+        >
+          Join Game
+        </button>
+      </div>
+
+      {joinOpen && (
+        <div className="flex gap-2 mt-2">
+          <TextInput
+            value={joinCode}
+            onChange={(e) => setJoinCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            placeholder="4-digit code"
+            inputMode="numeric"
+            maxLength={4}
+            className="text-center tracking-[0.3em]"
+          />
+          <button
+            type="button"
+            onClick={() => roomSession.joinRoom(joinCode)}
+            disabled={roomSession.busy || joinCode.length !== 4}
+            className="btn-press shrink-0 rounded-xl bg-emerald-400 text-black px-5 font-extrabold text-sm disabled:opacity-40"
+          >
+            Join
+          </button>
+        </div>
+      )}
+
+      {roomSession.error && (
+        <p className="text-red-400 text-xs mt-2 font-semibold">{roomSession.error}</p>
+      )}
+      <p className="text-white/30 text-xs mt-2 leading-relaxed">
+        Host a game to get a 4-digit code other refs can join — scores, the game clock, and period changes stay in sync on every connected device.
+      </p>
+    </Wrap>
+  );
+}
+
+// Compact entry point for per-game settings sheets: a small status pill that
+// opens the same Multi-Ref Sync controls as App Settings in a nested sheet,
+// so a ref can host/join without leaving the game they're scoring.
+function MultiRefSyncButton({ roomSession }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="btn-press w-full flex items-center justify-center gap-2 rounded-xl bg-white/5 border border-white/10 py-2.5 text-xs font-bold text-white/50 mb-3"
+      >
+        {roomSession.roomCode ? (
+          <>
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${roomSession.connected ? 'bg-emerald-400' : 'bg-yellow-400 animate-pulse'}`} />
+            Multi-Ref Sync · Room {roomSession.roomCode}
+          </>
+        ) : (
+          <>
+            <Icon name="Repeat" size={12} />
+            Multi-Ref Sync
+          </>
+        )}
+      </button>
+      <Sheet open={open} onClose={() => setOpen(false)} title="Multi-Ref Sync">
+        <MultiRefSyncField roomSession={roomSession} bare />
+      </Sheet>
+    </>
+  );
+}
+
+function AppSettingsSheet({ open, onClose, settings, setSettings, roomSession }) {
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const schedule = settings.schedule || defaultSchedule();
   const activeCount = (schedule.default || []).length;
@@ -1567,6 +1704,8 @@ function AppSettingsSheet({ open, onClose, settings, setSettings }) {
 
   return (
     <Sheet open={open} onClose={onClose} title="App Settings">
+      <MultiRefSyncField roomSession={roomSession} />
+
       <Field label="Camp Roster">
         <div className="flex flex-wrap gap-2">
           <button
@@ -1723,7 +1862,7 @@ function AppSettingsSheet({ open, onClose, settings, setSettings }) {
   );
 }
 
-function Home({ onSelect, settings, setSettings }) {
+function Home({ onSelect, settings, setSettings, roomSession }) {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
@@ -1772,6 +1911,7 @@ function Home({ onSelect, settings, setSettings }) {
         onClose={() => setSettingsOpen(false)}
         settings={settings}
         setSettings={setSettings}
+        roomSession={roomSession}
       />
 
       <div className="mt-4 text-center text-white/15 text-[10px] font-semibold">
@@ -1867,8 +2007,9 @@ function VolleyballSetTracker({ vb, teamADisplay, teamBDisplay, onAdvanceSet, on
   );
 }
 
-function Volleyball({ globalTimer, onBack }) {
+function Volleyball({ globalTimer, onBack, roomSession }) {
   const [vb, setVb] = useLocalStorage(VB_KEY, defaultVolleyball());
+  useRoomSync(roomSession.roomCode, 'volleyball', vb, setVb);
   const [appSettings] = useLocalStorage(APP_SETTINGS_KEY, defaultAppSettings());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [endGameOpen, setEndGameOpen] = useState(false);
@@ -2209,6 +2350,7 @@ function Volleyball({ globalTimer, onBack }) {
         >
           Reset Match
         </BigButton>
+        <MultiRefSyncButton roomSession={roomSession} />
         <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
           Done
         </BigButton>
@@ -2244,8 +2386,9 @@ function defaultFootball() {
   };
 }
 
-function Football({ globalTimer, onBack }) {
+function Football({ globalTimer, onBack, roomSession }) {
   const [fb, setFb] = useLocalStorage(FB_KEY, defaultFootball());
+  useRoomSync(roomSession.roomCode, 'football', fb, setFb);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [endGameOpen, setEndGameOpen] = useState(false);
 
@@ -2403,6 +2546,7 @@ function Football({ globalTimer, onBack }) {
         >
           Reset Game
         </BigButton>
+        <MultiRefSyncButton roomSession={roomSession} />
         <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
           Done
         </BigButton>
@@ -2449,10 +2593,11 @@ function advanceHalfInning(s) {
   return { ...s, half: 'Top', period: s.period + 1 };
 }
 
-function Universal({ sport, globalTimer, onBack }) {
+function Universal({ sport, globalTimer, onBack, roomSession }) {
   const cfg = UNIVERSAL_CONFIG[sport];
   const key = `refcourt_${sport}_v1`;
   const [g, setG] = useLocalStorage(key, defaultUniversal());
+  useRoomSync(roomSession.roomCode, sport, g, setG);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [endGameOpen, setEndGameOpen] = useState(false);
 
@@ -2695,6 +2840,7 @@ function Universal({ sport, globalTimer, onBack }) {
         >
           Reset Game
         </BigButton>
+        <MultiRefSyncButton roomSession={roomSession} />
         <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
           Done
         </BigButton>
@@ -2865,8 +3011,9 @@ function BasketballHistoryPanel({ open, onClose, history, bk, onDismissEntry }) 
   );
 }
 
-function Basketball({ globalTimer, onBack }) {
+function Basketball({ globalTimer, onBack, roomSession }) {
   const [bk, setBk] = useLocalStorage(BK_KEY, defaultBasketball());
+  useRoomSync(roomSession.roomCode, 'basketball', bk, setBk);
   const [appSettings] = useLocalStorage(APP_SETTINGS_KEY, defaultAppSettings());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [endGameOpen, setEndGameOpen] = useState(false);
@@ -3063,6 +3210,7 @@ function Basketball({ globalTimer, onBack }) {
         >
           Reset Game
         </BigButton>
+        <MultiRefSyncButton roomSession={roomSession} />
         <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
           Done
         </BigButton>
@@ -3115,7 +3263,8 @@ function SplashScreen({ onDone }) {
 function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [screen, setScreen] = useLocalStorage('refcourt_screen_v1', 'home');
-  const globalTimer = useGlobalTimer();
+  const roomSession = useRoomSession();
+  const globalTimer = useGlobalTimer(roomSession.roomCode);
   const [settings, setSettings] = useAppSettings();
 
   useEffect(() => {
@@ -3133,6 +3282,21 @@ function App() {
     return () => window.removeEventListener('popstate', onPopState);
   }, [setScreen]);
 
+  // Auto-join Multi-Ref Sync when the app is opened via a shared
+  // ?game=XXXX link — read once on mount, then strip it from the URL so
+  // reloading or sharing the plain URL afterward doesn't re-trigger it.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const gameParam = params.get('game');
+    if (gameParam) {
+      if (/^\d{4}$/.test(gameParam)) roomSession.joinRoom(gameParam);
+      params.delete('game');
+      const q = params.toString();
+      window.history.replaceState(window.history.state, '', window.location.pathname + (q ? `?${q}` : '') + window.location.hash);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const goTo = (s) => {
     setScreen(s);
     window.history.pushState({ screen: s }, '');
@@ -3141,12 +3305,12 @@ function App() {
   const goHome = () => window.history.back();
 
   let content;
-  if (screen === 'home') content = <Home onSelect={goTo} settings={settings} setSettings={setSettings} />;
-  else if (screen === 'volleyball') content = <Volleyball globalTimer={globalTimer} onBack={goHome} />;
-  else if (screen === 'football') content = <Football globalTimer={globalTimer} onBack={goHome} />;
-  else if (screen === 'basketball') content = <Basketball globalTimer={globalTimer} onBack={goHome} />;
-  else if (UNIVERSAL_CONFIG[screen]) content = <Universal sport={screen} globalTimer={globalTimer} onBack={goHome} />;
-  else content = <Home onSelect={goTo} settings={settings} setSettings={setSettings} />;
+  if (screen === 'home') content = <Home onSelect={goTo} settings={settings} setSettings={setSettings} roomSession={roomSession} />;
+  else if (screen === 'volleyball') content = <Volleyball globalTimer={globalTimer} onBack={goHome} roomSession={roomSession} />;
+  else if (screen === 'football') content = <Football globalTimer={globalTimer} onBack={goHome} roomSession={roomSession} />;
+  else if (screen === 'basketball') content = <Basketball globalTimer={globalTimer} onBack={goHome} roomSession={roomSession} />;
+  else if (UNIVERSAL_CONFIG[screen]) content = <Universal sport={screen} globalTimer={globalTimer} onBack={goHome} roomSession={roomSession} />;
+  else content = <Home onSelect={goTo} settings={settings} setSettings={setSettings} roomSession={roomSession} />;
 
   return (
     <div className="h-dvh overflow-hidden">
