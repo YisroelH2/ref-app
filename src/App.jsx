@@ -12,8 +12,9 @@ import { TEAM_COLOR_PRESETS, teamColorClasses, displayTeamName } from './lib/tea
 import ConsultButton from './components/ConsultButton.jsx';
 import ConsultOverlay from './components/ConsultOverlay.jsx';
 import { isFirebaseConfigured } from './firebaseConfig.js';
+import QRCode from 'qrcode';
 
-const APP_VERSION = '4.2.1';
+const APP_VERSION = '4.3.0';
 
 
 
@@ -178,6 +179,7 @@ function useAppSettings() {
 
   useEffect(() => {
     document.documentElement.classList.toggle('light-mode', settings.theme === 'light');
+    document.documentElement.classList.toggle('outdoor-mode', settings.theme === 'outdoor');
   }, [settings.theme]);
 
   return [settings, setSettings];
@@ -1191,9 +1193,17 @@ function ConsultSlot({ roomSession, consult, sport, teamAName, teamBName, teamAC
 function ScoreHalf({ name, score, onScore, onUndo, footer, scoreClassName = 'text-8xl', color, locked = false, hostLocked = false }) {
   const c = teamColorClasses(color);
   const disabled = locked || hostLocked;
+  const tap = () => { if (disabled) { vibrate(15); return; } onScore(); };
   return (
-    <button
-      onClick={() => { if (disabled) { vibrate(15); return; } onScore(); }}
+    // A plain div (not <button>) — `footer` can itself contain interactive
+    // buttons (e.g. Football's per-timeout dots), and nesting a <button>
+    // inside a <button> is invalid HTML that browsers silently reflow,
+    // breaking focus order and screen-reader semantics.
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={tap}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tap(); } }}
       aria-disabled={disabled}
       className={`btn-press flex-1 rounded-3xl ${c.bg} border-2 ${c.border} flex flex-col items-center justify-center gap-2 landscape:gap-1 relative overflow-hidden py-4 landscape:py-2 px-4 landscape:px-3 landscape:h-full landscape:min-h-0 ${disabled ? 'opacity-40 saturate-[.4]' : ''}`}
     >
@@ -1211,7 +1221,7 @@ function ScoreHalf({ name, score, onScore, onUndo, footer, scoreClassName = 'tex
       >
         <Icon name="Minus" size={18} />
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -1679,10 +1689,33 @@ function HostOnlyControls({ roomSession, permissions }) {
   );
 }
 
+// Renders entirely offline — `qrcode` draws to a data URL locally, no
+// network request — so it still works over a weak camp wifi/cell signal.
+function RoomQrCode({ url }) {
+  const [dataUrl, setDataUrl] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setDataUrl(null);
+    QRCode.toDataURL(url, { margin: 1, width: 240, color: { dark: '#000000ff', light: '#ffffffff' } })
+      .then((d) => { if (!cancelled) setDataUrl(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [url]);
+
+  if (!dataUrl) return null;
+  return (
+    <div className="flex justify-center py-3">
+      <img src={dataUrl} alt="Scan to join this game" width={180} height={180} className="rounded-xl border-4 border-white" />
+    </div>
+  );
+}
+
 function MultiRefSyncField({ roomSession, permissions, bare = false }) {
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [copied, setCopied] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
 
   if (!isFirebaseConfigured) {
     return (
@@ -1728,6 +1761,18 @@ function MultiRefSyncField({ roomSession, permissions, bare = false }) {
           <span className="text-sm font-bold text-white/70 truncate">{shareUrl}</span>
           <Icon name={copied ? 'Check' : 'Copy'} size={16} className={`shrink-0 ${copied ? 'text-emerald-400' : 'text-white/40'}`} />
         </button>
+
+        <button
+          type="button"
+          onClick={() => setQrOpen((o) => !o)}
+          className="btn-press w-full flex items-center justify-between gap-2 rounded-xl bg-white/10 px-4 py-3 mt-2"
+        >
+          <span className="text-sm font-bold text-white/70 flex items-center gap-2">
+            <Icon name="QrCode" size={16} className="text-white/40" /> Show QR Code
+          </span>
+          <Icon name={qrOpen ? 'ChevronUp' : 'ChevronDown'} size={14} className="text-white/40" />
+        </button>
+        {qrOpen && <RoomQrCode url={shareUrl} />}
 
         <button
           type="button"
@@ -1890,10 +1935,13 @@ function AppSettingsSheet({ open, onClose, settings, setSettings, roomSession, p
 
       <Field label="Appearance">
         <Segmented
-          options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }]}
+          options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }, { value: 'outdoor', label: 'Outdoor' }]}
           value={settings.theme}
           onChange={(v) => setSettings((s) => ({ ...s, theme: v }))}
         />
+        <p className="text-white/30 text-xs mt-2 leading-relaxed">
+          Outdoor boosts contrast on faint text and panels for readability in direct sunlight.
+        </p>
       </Field>
 
       <Field label="Football · Default Timeouts">
@@ -2496,10 +2544,10 @@ function Volleyball({ globalTimer, onBack, roomSession, permissions, consult }) 
           <Icon name="ArrowLeftRight" size={18} /> Switch Sides
         </BigButton>
         <BigButton
-          onClick={() => setVb(defaultVolleyball())}
+          onClick={() => { if (!canScore) { vibrate(15); return; } setVb(defaultVolleyball()); }}
           className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mb-3"
         >
-          Reset Match
+          {!canScore && <Icon name="Lock" size={14} className="inline mr-1.5 -mt-0.5" />}Reset Match
         </BigButton>
         <MultiRefSyncButton roomSession={roomSession} permissions={permissions} />
         <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
@@ -2710,10 +2758,10 @@ function Football({ globalTimer, onBack, roomSession, permissions, consult }) {
           />
         </Field>
         <BigButton
-          onClick={() => setFb(defaultFootball())}
+          onClick={() => { if (!canScore) { vibrate(15); return; } setFb(defaultFootball()); }}
           className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2 mb-3"
         >
-          Reset Game
+          {!canScore && <Icon name="Lock" size={14} className="inline mr-1.5 -mt-0.5" />}Reset Game
         </BigButton>
         <MultiRefSyncButton roomSession={roomSession} permissions={permissions} />
         <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
@@ -3028,10 +3076,10 @@ function Universal({ sport, globalTimer, onBack, roomSession, permissions, consu
           </BigButton>
         )}
         <BigButton
-          onClick={() => setG(defaultUniversal())}
+          onClick={() => { if (!canScore) { vibrate(15); return; } setG(defaultUniversal()); }}
           className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2 mb-3"
         >
-          Reset Game
+          {!canScore && <Icon name="Lock" size={14} className="inline mr-1.5 -mt-0.5" />}Reset Game
         </BigButton>
         <MultiRefSyncButton roomSession={roomSession} permissions={permissions} />
         <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
@@ -3286,9 +3334,27 @@ function Basketball({ globalTimer, onBack, roomSession, permissions, consult }) 
     timerJustFinishedRef.current = finished;
   }, [globalTimer.timer.finished]);
 
+  // Corrects this team's score by reversing their most recent logged shot
+  // (not necessarily the overall last shot — the other team may have scored
+  // since). Falls back to a flat -1 only if there's no logged shot for this
+  // team to reverse, so it can never drift out of sync with the shot log
+  // undoLast() reads — otherwise "Undo Last Score" would go on to reverse a
+  // shot this button already reversed, double-subtracting.
   const undo = (team) => {
     if (!canScore) { vibrate(15); return; }
-    setBk((s) => ({ ...s, [team === 'A' ? 'scoreA' : 'scoreB']: Math.max(0, (team === 'A' ? s.scoreA : s.scoreB) - 1) }));
+    setBk((s) => {
+      const scoreKey = team === 'A' ? 'scoreA' : 'scoreB';
+      const lastIdx = s.history.map((h) => h.team).lastIndexOf(team);
+      if (lastIdx === -1) {
+        return { ...s, [scoreKey]: Math.max(0, s[scoreKey] - 1) };
+      }
+      const entry = s.history[lastIdx];
+      return {
+        ...s,
+        [scoreKey]: Math.max(0, s[scoreKey] - entry.pts),
+        history: s.history.filter((_, i) => i !== lastIdx),
+      };
+    });
   };
 
   const lastAction = bk.history[bk.history.length - 1];
@@ -3414,10 +3480,10 @@ function Basketball({ globalTimer, onBack, roomSession, permissions, consult }) 
           />
         </Field>
         <BigButton
-          onClick={() => setBk(defaultBasketball())}
+          onClick={() => { if (!canScore) { vibrate(15); return; } setBk(defaultBasketball()); }}
           className="w-full rounded-2xl bg-red-500/15 border border-red-500/40 py-4 font-bold text-red-400 mt-2 mb-3"
         >
-          Reset Game
+          {!canScore && <Icon name="Lock" size={14} className="inline mr-1.5 -mt-0.5" />}Reset Game
         </BigButton>
         <MultiRefSyncButton roomSession={roomSession} permissions={permissions} />
         <BigButton onClick={() => setSettingsOpen(false)} className="w-full rounded-2xl bg-emerald-400 text-black py-4 font-extrabold text-lg">
@@ -3567,7 +3633,7 @@ function App() {
         <ErrorBoundary key={screen}>{content}</ErrorBoundary>
       </div>
       {isFirebaseConfigured && roomSession.roomCode && (
-        <ConsultOverlay consult={consult.consult} respond={consult.respond} clientId={roomSession.clientId} />
+        <ConsultOverlay consult={consult.consult} respond={consult.respond} nudge={consult.nudge} clientId={roomSession.clientId} />
       )}
       {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
     </div>

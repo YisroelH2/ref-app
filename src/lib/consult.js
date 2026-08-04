@@ -100,7 +100,19 @@ export function useConsult(roomCode, clientId, role) {
     }).catch(() => {});
   }, [consult, clientId]);
 
+  // Re-pings every other device on a still-pending question — for when the
+  // other ref is mid-play and missed the first buzz, or quietly set it aside
+  // (see ConsultOverlay's local "answer later" dismissal). Just bumps a
+  // timestamp on the existing record rather than sending a new one, so it
+  // can't create a second competing question.
+  const nudge = useCallback(() => {
+    if (!nodeRef.current || !dbFnsRef.current || !consult) return;
+    if (consult.status !== 'pending' || consult.senderId !== clientId) return;
+    const dbFns = dbFnsRef.current;
+    dbFns.update(nodeRef.current, { nudgedAt: dbFns.serverTimestamp() }).catch(() => {});
+  }, [consult, clientId]);
+
   const sending = !!(consult && consult.status === 'pending' && consult.senderId === clientId);
 
-  return { consult, sendConsult, respond, sending };
+  return { consult, sendConsult, respond, nudge, sending };
 }

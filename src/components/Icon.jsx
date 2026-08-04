@@ -1,6 +1,6 @@
 import {
   AlertTriangle, ArrowLeft, ArrowLeftRight, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleDot,
-  Clock, Copy, Flag, Lock, MessageCircle, Minus, Pause, Play, Plus, Repeat, RotateCcw, RotateCw,
+  Clock, Copy, Flag, Lock, MessageCircle, Minus, Pause, Play, Plus, QrCode, Repeat, RotateCcw, RotateCw,
   Send, Settings, Trash2, Volume2, X,
 } from 'lucide-react';
 
@@ -8,7 +8,7 @@ import {
 // bundle doesn't pull in the entire lucide-react icon set (~1000 components).
 const ICONS = {
   AlertTriangle, ArrowLeft, ArrowLeftRight, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleDot,
-  Clock, Copy, Flag, Lock, MessageCircle, Minus, Pause, Play, Plus, Repeat, RotateCcw, RotateCw,
+  Clock, Copy, Flag, Lock, MessageCircle, Minus, Pause, Play, Plus, QrCode, Repeat, RotateCcw, RotateCw,
   Send, Settings, Trash2, Volume2, X,
 };
 
@@ -18,7 +18,7 @@ const ICON_FALLBACK = {
   X: '✕', Check: '✓', ChevronLeft: '‹', ChevronRight: '›', ChevronUp: '˄', ChevronDown: '˅', Clock: '🕐',
   Flag: '⚑', ArrowLeftRight: '⇄', Volume2: '🔔', RotateCw: '↻', CircleDot: '●',
   Copy: '📋', Send: '➤', Lock: '🔒', ArrowLeft: '←', Repeat: '⟳', Trash2: '🗑', MessageCircle: '💬',
-  AlertTriangle: '⚠',
+  AlertTriangle: '⚠', QrCode: '▦',
 };
 
 export default function Icon({ name, size = 24, className = '', strokeWidth = 2.5 }) {

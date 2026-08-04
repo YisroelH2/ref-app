@@ -66,3 +66,40 @@ html.light-mode video {
 html:not(.light-mode) .emoji-safe {
   filter: none;
 }
+
+/* ---------- Outdoor mode: boosts the low-opacity white/black utility
+   classes used throughout for secondary text and translucent panels, since
+   those wash out to near-invisible in direct sunlight. Kept as a tiered
+   scale (faint/dim/near-solid) rather than flattening everything to one
+   opacity, so disabled/locked controls stay visually distinct from active
+   ones — just all more visible than the dark-mode defaults. Pure black
+   backgrounds and full-opacity text are untouched; only the classes
+   actually used in the app are listed here. ---------- */
+html.outdoor-mode .text-white\/15,
+html.outdoor-mode .text-white\/20,
+html.outdoor-mode .text-white\/25 { color: rgb(255 255 255 / 0.55) !important; }
+html.outdoor-mode .text-white\/30,
+html.outdoor-mode .text-white\/40,
+html.outdoor-mode .text-white\/50 { color: rgb(255 255 255 / 0.78) !important; }
+html.outdoor-mode .text-white\/60,
+html.outdoor-mode .text-white\/70,
+html.outdoor-mode .text-white\/80 { color: rgb(255 255 255 / 0.94) !important; }
+html.outdoor-mode .text-black\/50 { color: rgb(0 0 0 / 0.85) !important; }
+
+html.outdoor-mode .bg-white\/5 { background-color: rgb(255 255 255 / 0.16) !important; }
+html.outdoor-mode .bg-white\/10 { background-color: rgb(255 255 255 / 0.22) !important; }
+html.outdoor-mode .bg-white\/15 { background-color: rgb(255 255 255 / 0.28) !important; }
+html.outdoor-mode .bg-white\/20 { background-color: rgb(255 255 255 / 0.32) !important; }
+html.outdoor-mode .bg-white\/25 { background-color: rgb(255 255 255 / 0.38) !important; }
+html.outdoor-mode .bg-white\/35 { background-color: rgb(255 255 255 / 0.48) !important; }
+html.outdoor-mode .bg-black\/20 { background-color: rgb(0 0 0 / 0.45) !important; }
+html.outdoor-mode .bg-black\/25 { background-color: rgb(0 0 0 / 0.5) !important; }
+
+html.outdoor-mode .border-white\/5 { border-color: rgb(255 255 255 / 0.25) !important; }
+html.outdoor-mode .border-white\/10 { border-color: rgb(255 255 255 / 0.3) !important; }
+html.outdoor-mode .border-white\/15 { border-color: rgb(255 255 255 / 0.38) !important; }
+html.outdoor-mode .border-white\/20 { border-color: rgb(255 255 255 / 0.45) !important; }
+html.outdoor-mode .border-white\/25,
+html.outdoor-mode .border-white\/30 { border-color: rgb(255 255 255 / 0.55) !important; }
+html.outdoor-mode .border-black\/30 { border-color: rgb(0 0 0 / 0.6) !important; }
+html.outdoor-mode .ring-white\/50 { --tw-ring-color: rgb(255 255 255 / 0.75) !important; }
