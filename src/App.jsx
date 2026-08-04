@@ -12,7 +12,7 @@ import ConsultButton from './components/ConsultButton.jsx';
 import ConsultOverlay from './components/ConsultOverlay.jsx';
 import { isFirebaseConfigured } from './firebaseConfig.js';
 
-const APP_VERSION = '4.1.2';
+const APP_VERSION = '4.1.3';
 
 
 
