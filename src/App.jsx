@@ -12,7 +12,7 @@ import ConsultButton from './components/ConsultButton.jsx';
 import ConsultOverlay from './components/ConsultOverlay.jsx';
 import { isFirebaseConfigured } from './firebaseConfig.js';
 
-const APP_VERSION = '4.1.3';
+const APP_VERSION = '4.2.0';
 
 
 
@@ -1198,9 +1198,18 @@ function Header({ title, onBack, onSettings, extra }) {
 // Wraps ConsultButton so it's fully absent (not just disabled) unless
 // Multi-Ref Sync is actually configured and this device is in a live room —
 // matches the gating idiom already used for the sync UI itself.
-function ConsultSlot({ roomSession, consult }) {
+function ConsultSlot({ roomSession, consult, sport, teamAName, teamBName }) {
   if (!isFirebaseConfigured || !roomSession.roomCode) return null;
-  return <ConsultButton consult={consult.consult} sendConsult={consult.sendConsult} sending={consult.sending} />;
+  return (
+    <ConsultButton
+      consult={consult.consult}
+      sendConsult={consult.sendConsult}
+      sending={consult.sending}
+      sport={sport}
+      teamAName={teamAName}
+      teamBName={teamBName}
+    />
+  );
 }
 
 /* ============================== SHARED SCORE HALF ============================== */
@@ -2350,7 +2359,7 @@ function Volleyball({ globalTimer, onBack, roomSession, permissions, consult }) 
   return (
     <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:min-h-dvh">
       <EndGamePill onClick={() => setEndGameOpen(true)} />
-      <Header title="Volleyball" onBack={onBack} onSettings={() => setSettingsOpen(true)} extra={<ConsultSlot roomSession={roomSession} consult={consult} />} />
+      <Header title="Volleyball" onBack={onBack} onSettings={() => setSettingsOpen(true)} extra={<ConsultSlot roomSession={roomSession} consult={consult} sport="volleyball" teamAName={teamADisplay} teamBName={teamBDisplay} />} />
 
       <VolleyballSetTracker vb={vb} teamADisplay={teamADisplay} teamBDisplay={teamBDisplay} onAdvanceSet={advanceSet} onViewSet={viewSet} locked={!canPeriod} />
 
@@ -2656,7 +2665,7 @@ function Football({ globalTimer, onBack, roomSession, permissions, consult }) {
   return (
     <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:min-h-dvh">
       <EndGamePill onClick={() => setEndGameOpen(true)} />
-      <Header title="Football" onBack={onBack} onSettings={() => setSettingsOpen(true)} extra={<ConsultSlot roomSession={roomSession} consult={consult} />} />
+      <Header title="Football" onBack={onBack} onSettings={() => setSettingsOpen(true)} extra={<ConsultSlot roomSession={roomSession} consult={consult} sport="football" teamAName={displayTeamName(fb.teamA, 'A')} teamBName={displayTeamName(fb.teamB, 'B')} />} />
       <TimerBar globalTimer={globalTimer} locked={!canTimer} />
 
       <div className="flex flex-col landscape:flex-row gap-3 landscape:gap-2 flex-1 mb-4 landscape:mb-2 landscape:min-h-0" style={{ minHeight: '48vh' }}>
@@ -2922,7 +2931,7 @@ function Universal({ sport, globalTimer, onBack, roomSession, permissions, consu
         </div>
       )}
       <EndGamePill onClick={() => setEndGameOpen(true)} />
-      <Header title={cfg.title} onBack={onBack} onSettings={() => setSettingsOpen(true)} extra={<ConsultSlot roomSession={roomSession} consult={consult} />} />
+      <Header title={cfg.title} onBack={onBack} onSettings={() => setSettingsOpen(true)} extra={<ConsultSlot roomSession={roomSession} consult={consult} sport={sport} teamAName={displayTeamName(g.teamA, 'A')} teamBName={displayTeamName(g.teamB, 'B')} />} />
       {sport !== 'baseball' && <TimerBar globalTimer={globalTimer} periodCount={periodMaxUnit} unitLabel={periodUnit} locked={!canTimer} />}
 
       <div className="flex flex-col landscape:flex-row gap-3 landscape:gap-2 flex-1 mb-4 landscape:mb-2 landscape:min-h-0" style={{ minHeight: '48vh' }}>
@@ -3377,7 +3386,7 @@ function Basketball({ globalTimer, onBack, roomSession, permissions, consult }) 
         bk={bk}
       />
 
-      <Header title="Basketball" onBack={onBack} onSettings={() => setSettingsOpen(true)} extra={<ConsultSlot roomSession={roomSession} consult={consult} />} />
+      <Header title="Basketball" onBack={onBack} onSettings={() => setSettingsOpen(true)} extra={<ConsultSlot roomSession={roomSession} consult={consult} sport="basketball" />} />
       <TimerBar
         globalTimer={globalTimer}
         periodCount={bk.periodMode === 'quarters' ? 4 : 2}

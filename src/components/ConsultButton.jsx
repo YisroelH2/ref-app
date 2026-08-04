@@ -2,18 +2,63 @@ import { useState } from 'react';
 import Icon from './Icon.jsx';
 import Sheet from './Sheet.jsx';
 
-const CONSULT_PRESETS = [
+// Fallback preset set for any sport without a dedicated list below.
+const DEFAULT_PRESETS = [
   { type: 'inout', prompt: 'In / Out?', options: ['IN', 'OUT', 'IDK'] },
   { type: 'foul', prompt: 'Foul?', options: ['FOUL', 'NO FOUL', 'IDK'] },
   { type: 'custom', prompt: 'Quick Check', options: ['YES', 'NO'] },
 ];
 
+// Presets tailored to the calls each sport actually needs. Entries flagged
+// `dynamicTeams` get their options filled in at render time from the live
+// team names (see `presets` below) instead of a fixed options list.
+const SPORT_PRESETS = {
+  volleyball: [
+    { type: 'inout', prompt: 'In / Out?', options: ['IN', 'OUT', 'IDK'] },
+    { type: 'carry', prompt: 'Carry?', options: ['YES', 'NO'] },
+    { type: 'serve', prompt: "Who's Serve?", dynamicTeams: true },
+  ],
+  basketball: [
+    { type: 'foul', prompt: 'Foul?', options: ['FOUL', 'NO FOUL', 'IDK'] },
+    { type: 'travel', prompt: 'Travel?', options: ['YES', 'NO', 'IDK'] },
+    { type: 'value', prompt: '2 or 3?', options: ['2', '3'] },
+  ],
+  football: [
+    { type: 'down', prompt: 'Down?', options: ['1', '2', '3', '4'] },
+    { type: 'pi', prompt: 'PI?', options: ['YES', 'NO'] },
+    { type: 'offsides', prompt: 'Offsides — Which Team?', dynamicTeams: true },
+    { type: 'targeting', prompt: 'Targeting?', options: ['YES', 'NO'] },
+    { type: 'catch', prompt: 'Catch — In / Out?', options: ['IN', 'OUT'] },
+  ],
+  soccer: [
+    { type: 'handball', prompt: 'Handball?', options: ['YES', 'NO', 'IDK'] },
+    { type: 'foul', prompt: 'Foul?', options: ['YES', 'NO', 'IDK'] },
+    { type: 'goal', prompt: 'Goal?', options: ['YES', 'NO', 'IDK'] },
+  ],
+  hockey: [
+    { type: 'highstick', prompt: 'High Stick?', options: ['YES', 'NO', 'IDK'] },
+    { type: 'goal', prompt: 'Goal?', options: ['YES', 'NO', 'IDK'] },
+  ],
+  baseball: [
+    { type: 'safeout', prompt: 'Safe / Out?', options: ['SAFE', 'OUT', 'IDK'] },
+    { type: 'fairfoul', prompt: 'Fair / Foul?', options: ['FAIR', 'FOUL', 'IDK'] },
+    { type: 'doublehomer', prompt: 'Double or Homer?', options: ['DOUBLE', 'HOMER'] },
+    { type: 'checkswing', prompt: 'Check Swing?', options: ['STRIKE', 'NO SWING'] },
+    { type: 'outs', prompt: 'Outs?', options: ['1', '2'] },
+  ],
+};
+
 // Compact "Ref Consult" trigger for the main game bar — only ever rendered
 // while in an active, connected room (the caller gates that), so it's
 // fully absent rather than disabled when Multi-Ref Sync isn't live.
-export default function ConsultButton({ consult, sendConsult, sending }) {
+export default function ConsultButton({ consult, sendConsult, sending, sport, teamAName, teamBName }) {
   const [open, setOpen] = useState(false);
   const blocked = sending || (consult && consult.status === 'pending');
+  const presets = (SPORT_PRESETS[sport] || DEFAULT_PRESETS).map((preset) =>
+    preset.dynamicTeams
+      ? { ...preset, options: [teamAName || 'Team A', teamBName || 'Team B'] }
+      : preset
+  );
 
   const send = (preset) => {
     sendConsult(preset.type, preset.prompt, preset.options);
@@ -36,7 +81,7 @@ export default function ConsultButton({ consult, sendConsult, sending }) {
           Sends a quick one-tap question to every other connected ref in this room.
         </p>
         <div className="flex flex-col gap-2.5">
-          {CONSULT_PRESETS.map((preset) => (
+          {presets.map((preset) => (
             <button
               key={preset.type}
               type="button"
