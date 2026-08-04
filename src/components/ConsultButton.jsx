@@ -51,12 +51,15 @@ const SPORT_PRESETS = {
 // Compact "Ref Consult" trigger for the main game bar — only ever rendered
 // while in an active, connected room (the caller gates that), so it's
 // fully absent rather than disabled when Multi-Ref Sync isn't live.
-export default function ConsultButton({ consult, sendConsult, sending, sport, teamAName, teamBName }) {
+export default function ConsultButton({ consult, sendConsult, sending, sport, teamAName, teamBName, teamAColor, teamBColor }) {
   const [open, setOpen] = useState(false);
   const blocked = sending || (consult && consult.status === 'pending');
   const presets = (SPORT_PRESETS[sport] || DEFAULT_PRESETS).map((preset) =>
     preset.dynamicTeams
-      ? { ...preset, options: [teamAName || 'Team A', teamBName || 'Team B'] }
+      ? { ...preset, options: [
+          { label: teamAName || 'Team A', color: teamAColor },
+          { label: teamBName || 'Team B', color: teamBColor },
+        ] }
       : preset
   );
 

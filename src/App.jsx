@@ -8,11 +8,12 @@ import { useRoomSync } from './lib/useRoomSync.js';
 import { useRoomPermissions } from './lib/roomPermissions.js';
 import { useConsult } from './lib/consult.js';
 import { vibrate } from './lib/haptics.js';
+import { TEAM_COLOR_PRESETS, teamColorClasses, displayTeamName } from './lib/teamColors.js';
 import ConsultButton from './components/ConsultButton.jsx';
 import ConsultOverlay from './components/ConsultOverlay.jsx';
 import { isFirebaseConfigured } from './firebaseConfig.js';
 
-const APP_VERSION = '4.2.0';
+const APP_VERSION = '4.2.1';
 
 
 
@@ -260,35 +261,6 @@ function Segmented({ options, value, onChange }) {
 }
 
 /* ============================== TEAM COLORS ============================== */
-
-const TEAM_COLOR_PRESETS = [
-  { id: 'red', label: 'Red', swatch: 'bg-red-500', bg: 'bg-red-500', border: 'border-red-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
-  { id: 'blue', label: 'Blue', swatch: 'bg-blue-500', bg: 'bg-blue-500', border: 'border-blue-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
-  { id: 'green', label: 'Green', swatch: 'bg-emerald-500', bg: 'bg-emerald-500', border: 'border-emerald-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
-  { id: 'yellow', label: 'Yellow', swatch: 'bg-yellow-400', bg: 'bg-yellow-400', border: 'border-yellow-300', text: 'text-black', sub: 'text-black/50', overlay: 'bg-white/35' },
-  { id: 'orange', label: 'Orange', swatch: 'bg-orange-500', bg: 'bg-orange-500', border: 'border-orange-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
-  { id: 'purple', label: 'Purple', swatch: 'bg-purple-500', bg: 'bg-purple-500', border: 'border-purple-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
-  { id: 'pink', label: 'Pink', swatch: 'bg-pink-500', bg: 'bg-pink-500', border: 'border-pink-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
-  { id: 'sky', label: 'Sky', swatch: 'bg-sky-400', bg: 'bg-sky-400', border: 'border-sky-300', text: 'text-black', sub: 'text-black/50', overlay: 'bg-white/35' },
-  { id: 'white', label: 'White', swatch: 'bg-white', bg: 'bg-white', border: 'border-zinc-300', text: 'text-black', sub: 'text-black/50', overlay: 'bg-white/35' },
-  { id: 'black', label: 'Black', swatch: 'bg-zinc-800', bg: 'bg-zinc-800', border: 'border-zinc-600', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
-  { id: 'brown', label: 'Brown', swatch: 'bg-amber-800', bg: 'bg-amber-800', border: 'border-amber-700', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
-  { id: 'grey', label: 'Grey', swatch: 'bg-gray-500', bg: 'bg-gray-500', border: 'border-gray-400', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
-  { id: 'navy', label: 'Navy Blue', swatch: 'bg-blue-900', bg: 'bg-blue-900', border: 'border-blue-800', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
-  { id: 'darkgreen', label: 'Dark Green', swatch: 'bg-green-800', bg: 'bg-green-800', border: 'border-green-700', text: 'text-white', sub: 'text-white/50', overlay: 'bg-black/25' },
-];
-
-const DEFAULT_TEAM_COLOR = { bg: 'bg-zinc-900', border: 'border-white/10', text: 'text-white', sub: 'text-white/20', overlay: 'bg-white/10' };
-
-function teamColorClasses(colorId) {
-  const preset = TEAM_COLOR_PRESETS.find((c) => c.id === colorId);
-  if (!preset) return DEFAULT_TEAM_COLOR;
-  return { bg: preset.bg, border: preset.border, text: preset.text, sub: preset.sub, overlay: preset.overlay };
-}
-
-function displayTeamName(name, which) {
-  return name && name.trim() ? name : (which === 'A' ? 'Team A' : 'Team B');
-}
 
 function ColorPicker({ value, onChange }) {
   return (
@@ -1198,7 +1170,7 @@ function Header({ title, onBack, onSettings, extra }) {
 // Wraps ConsultButton so it's fully absent (not just disabled) unless
 // Multi-Ref Sync is actually configured and this device is in a live room —
 // matches the gating idiom already used for the sync UI itself.
-function ConsultSlot({ roomSession, consult, sport, teamAName, teamBName }) {
+function ConsultSlot({ roomSession, consult, sport, teamAName, teamBName, teamAColor, teamBColor }) {
   if (!isFirebaseConfigured || !roomSession.roomCode) return null;
   return (
     <ConsultButton
@@ -1208,6 +1180,8 @@ function ConsultSlot({ roomSession, consult, sport, teamAName, teamBName }) {
       sport={sport}
       teamAName={teamAName}
       teamBName={teamBName}
+      teamAColor={teamAColor}
+      teamBColor={teamBColor}
     />
   );
 }
@@ -2359,7 +2333,7 @@ function Volleyball({ globalTimer, onBack, roomSession, permissions, consult }) 
   return (
     <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:min-h-dvh">
       <EndGamePill onClick={() => setEndGameOpen(true)} />
-      <Header title="Volleyball" onBack={onBack} onSettings={() => setSettingsOpen(true)} extra={<ConsultSlot roomSession={roomSession} consult={consult} sport="volleyball" teamAName={teamADisplay} teamBName={teamBDisplay} />} />
+      <Header title="Volleyball" onBack={onBack} onSettings={() => setSettingsOpen(true)} extra={<ConsultSlot roomSession={roomSession} consult={consult} sport="volleyball" teamAName={teamADisplay} teamBName={teamBDisplay} teamAColor={vb.colorA} teamBColor={vb.colorB} />} />
 
       <VolleyballSetTracker vb={vb} teamADisplay={teamADisplay} teamBDisplay={teamBDisplay} onAdvanceSet={advanceSet} onViewSet={viewSet} locked={!canPeriod} />
 
@@ -2665,7 +2639,7 @@ function Football({ globalTimer, onBack, roomSession, permissions, consult }) {
   return (
     <div className="px-5 pt-6 pb-8 landscape:px-3 landscape:pt-2 landscape:pb-2 max-w-md landscape:max-w-none mx-auto flex flex-col min-h-[100dvh] landscape:min-h-dvh">
       <EndGamePill onClick={() => setEndGameOpen(true)} />
-      <Header title="Football" onBack={onBack} onSettings={() => setSettingsOpen(true)} extra={<ConsultSlot roomSession={roomSession} consult={consult} sport="football" teamAName={displayTeamName(fb.teamA, 'A')} teamBName={displayTeamName(fb.teamB, 'B')} />} />
+      <Header title="Football" onBack={onBack} onSettings={() => setSettingsOpen(true)} extra={<ConsultSlot roomSession={roomSession} consult={consult} sport="football" teamAName={displayTeamName(fb.teamA, 'A')} teamBName={displayTeamName(fb.teamB, 'B')} teamAColor={fb.colorA} teamBColor={fb.colorB} />} />
       <TimerBar globalTimer={globalTimer} locked={!canTimer} />
 
       <div className="flex flex-col landscape:flex-row gap-3 landscape:gap-2 flex-1 mb-4 landscape:mb-2 landscape:min-h-0" style={{ minHeight: '48vh' }}>

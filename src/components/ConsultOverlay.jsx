@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import Icon from './Icon.jsx';
 import { vibrate } from '../lib/haptics.js';
+import { teamColorClasses } from '../lib/teamColors.js';
 
 // Renders whichever face of the shared rooms/{roomCode}/consult record is
 // relevant to *this* device: the incoming question + response buttons for
@@ -48,16 +49,21 @@ export default function ConsultOverlay({ consult, respond, clientId }) {
           </div>
           <div className="text-2xl font-black mb-5">{consult.prompt}</div>
           <div className="flex flex-col gap-2.5">
-            {(consult.options || []).map((opt) => (
-              <button
-                key={opt}
-                type="button"
-                onClick={() => respond(opt)}
-                className="btn-press w-full rounded-2xl bg-white/10 py-4 font-extrabold text-lg active:bg-white/20"
-              >
-                {opt}
-              </button>
-            ))}
+            {(consult.options || []).map((opt) => {
+              const label = typeof opt === 'string' ? opt : opt.label;
+              const color = typeof opt === 'string' ? null : opt.color;
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => respond(label)}
+                  className="btn-press w-full rounded-2xl bg-white/10 py-4 font-extrabold text-lg active:bg-white/20 flex items-center justify-center gap-2.5"
+                >
+                  {color && <span className={`w-4 h-4 rounded-full shrink-0 ${teamColorClasses(color).bg} border border-white/20`} />}
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
