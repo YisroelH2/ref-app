@@ -2416,13 +2416,22 @@ function Volleyball({ globalTimer, onBack, roomSession, permissions, consult }) 
           </BigButton>
         </div>
       ) : vb.matchFinished && vb.set === vb.liveSet ? (
-        <BigButton
-          onClick={continueEditingSet}
-          className="rounded-3xl bg-yellow-400/15 border-2 border-yellow-400 py-6 landscape:py-3 text-yellow-400 font-extrabold text-sm flex items-center justify-center gap-2 shrink-0"
-        >
-          <Icon name="RotateCcw" size={18} />
-          Set {vb.set} (Final) · Continue Set
-        </BigButton>
+        <div className="flex gap-2 shrink-0">
+          <BigButton
+            onClick={continueEditingSet}
+            className="basis-[30%] grow rounded-3xl bg-yellow-400/15 border-2 border-yellow-400 py-6 landscape:py-3 text-yellow-400 font-extrabold text-xs flex flex-col items-center justify-center gap-1"
+          >
+            <Icon name="RotateCcw" size={18} />
+            Continue Set
+          </BigButton>
+          <BigButton
+            onClick={() => setEndGameOpen(true)}
+            className="basis-[70%] grow rounded-3xl bg-emerald-400 py-6 landscape:py-3 text-black font-extrabold text-sm flex items-center justify-center gap-2"
+          >
+            <Icon name="Flag" size={18} />
+            Match Over · End Game
+          </BigButton>
+        </div>
       ) : vb.set === vb.liveSet - 1 ? (
         <div className="flex gap-2 shrink-0">
           <BigButton
