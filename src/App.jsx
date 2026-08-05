@@ -14,7 +14,7 @@ import ConsultOverlay from './components/ConsultOverlay.jsx';
 import { isFirebaseConfigured } from './firebaseConfig.js';
 import QRCode from 'qrcode';
 
-const APP_VERSION = '4.3.0';
+const APP_VERSION = '4.3.1';
 
 
 
@@ -2287,7 +2287,9 @@ function Volleyball({ globalTimer, onBack, roomSession, permissions, consult }) 
   // just finalized (the one directly before the current live set), since that's
   // the only history entry that can be restored without losing progress made
   // in a newer live set.
-  const continueEditingSet = () => setVb((s) => {
+  const continueEditingSet = () => {
+    if (!canPeriod) { vibrate(15); return; }
+    setVb((s) => {
     if (s.matchFinished && s.set === s.liveSet) {
       // Undo "End Set 3": score was frozen in place, not reset, so just
       // un-finish the match and drop the history entry that was just saved.
@@ -2312,15 +2314,19 @@ function Volleyball({ globalTimer, onBack, roomSession, permissions, consult }) 
       liveSet: s.set,
       setHistory,
     };
-  });
+    });
+  };
 
-  const switchSides = () => setVb((s) => ({
-    ...s,
-    teamA: s.teamB, teamB: s.teamA,
-    colorA: s.colorB, colorB: s.colorA,
-    scoreA: s.scoreB, scoreB: s.scoreA,
-    serving: s.serving === 'A' ? 'B' : 'A',
-  }));
+  const switchSides = () => {
+    if (!canPossession) { vibrate(15); return; }
+    setVb((s) => ({
+      ...s,
+      teamA: s.teamB, teamB: s.teamA,
+      colorA: s.colorB, colorB: s.colorA,
+      scoreA: s.scoreB, scoreB: s.scoreA,
+      serving: s.serving === 'A' ? 'B' : 'A',
+    }));
+  };
 
   const setServer = (team) => setVb((s) => ({ ...s, serving: team, streak: 0 }));
 
@@ -2450,9 +2456,9 @@ function Volleyball({ globalTimer, onBack, roomSession, permissions, consult }) 
         <div className="flex gap-2 shrink-0">
           <BigButton
             onClick={continueEditingSet}
-            className="basis-[30%] grow rounded-3xl bg-yellow-400/15 border-2 border-yellow-400 py-6 landscape:py-3 text-yellow-400 font-extrabold text-xs flex flex-col items-center justify-center gap-1"
+            className={`basis-[30%] grow rounded-3xl bg-yellow-400/15 border-2 border-yellow-400 py-6 landscape:py-3 text-yellow-400 font-extrabold text-xs flex flex-col items-center justify-center gap-1 ${!canPeriod ? 'opacity-40' : ''}`}
           >
-            <Icon name="RotateCcw" size={18} />
+            <Icon name={canPeriod ? 'RotateCcw' : 'Lock'} size={18} />
             Continue Set
           </BigButton>
           <BigButton
@@ -2474,9 +2480,9 @@ function Volleyball({ globalTimer, onBack, roomSession, permissions, consult }) 
           </BigButton>
           <BigButton
             onClick={continueEditingSet}
-            className="basis-[30%] grow rounded-3xl bg-yellow-400/15 border-2 border-yellow-400 py-6 landscape:py-3 text-yellow-400 font-extrabold text-xs flex flex-col items-center justify-center gap-1"
+            className={`basis-[30%] grow rounded-3xl bg-yellow-400/15 border-2 border-yellow-400 py-6 landscape:py-3 text-yellow-400 font-extrabold text-xs flex flex-col items-center justify-center gap-1 ${!canPeriod ? 'opacity-40' : ''}`}
           >
-            <Icon name="RotateCcw" size={18} />
+            <Icon name={canPeriod ? 'RotateCcw' : 'Lock'} size={18} />
             Continue Set
           </BigButton>
         </div>
@@ -2540,8 +2546,8 @@ function Volleyball({ globalTimer, onBack, roomSession, permissions, consult }) 
         <p className="text-white/30 text-xs mt-2 mb-3 leading-relaxed">
           We'll flag "Point Serve" when the serving team can win the set on this serve (once per team per set) — adding "(Win By 2)" once both teams are close enough that the win-by-two rule is in play, so it's clear that's what's needed, not a claim they're already 2 ahead. Use "Next Set" at the top of the screen to end a set — sides switch automatically.
         </p>
-        <BigButton onClick={switchSides} className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white mb-3 flex items-center justify-center gap-2">
-          <Icon name="ArrowLeftRight" size={18} /> Switch Sides
+        <BigButton onClick={switchSides} className={`w-full rounded-2xl bg-white/10 py-4 font-bold text-white mb-3 flex items-center justify-center gap-2 ${!canPossession ? 'opacity-40' : ''}`}>
+          <Icon name={canPossession ? 'ArrowLeftRight' : 'Lock'} size={18} /> Switch Sides
         </BigButton>
         <BigButton
           onClick={() => { if (!canScore) { vibrate(15); return; } setVb(defaultVolleyball()); }}
@@ -2868,7 +2874,10 @@ function Universal({ sport, globalTimer, onBack, roomSession, permissions, consu
     if (!canPossession) { vibrate(15); return; }
     setG((s) => ({ ...s, half: s.half === 'Top' ? 'Bottom' : 'Top' }));
   };
-  const swapTopBottom = () => setG((s) => ({ ...s, topTeam: s.topTeam === 'A' ? 'B' : 'A' }));
+  const swapTopBottom = () => {
+    if (!canPossession) { vibrate(15); return; }
+    setG((s) => ({ ...s, topTeam: s.topTeam === 'A' ? 'B' : 'A' }));
+  };
 
   const topTeam = g.topTeam || 'A';
   const battingTeam = g.half === 'Top' ? topTeam : (topTeam === 'A' ? 'B' : 'A');
@@ -2933,6 +2942,12 @@ function Universal({ sport, globalTimer, onBack, roomSession, permissions, consu
       }
       return { ...s, balls: 0, strikes: 0, outs };
     });
+  };
+
+  const removeOut = () => {
+    if (!canScore) { vibrate(15); return; }
+    vibrate(20);
+    setG((s) => ({ ...s, outs: Math.max(0, (s.outs || 0) - 1) }));
   };
 
   const resetCount = () => {
@@ -3027,9 +3042,14 @@ function Universal({ sport, globalTimer, onBack, roomSession, permissions, consu
             <BigButton onClick={addStrike} className="rounded-2xl bg-yellow-400/15 border-2 border-yellow-400/40 text-yellow-400 py-5 landscape:py-2.5 font-extrabold text-sm">
               +STRIKE
             </BigButton>
-            <BigButton onClick={addOut} className="rounded-2xl bg-red-500/15 border-2 border-red-500/40 text-red-400 py-5 landscape:py-2.5 font-extrabold text-sm">
-              +OUT
-            </BigButton>
+            <div className="grid grid-cols-2 gap-1">
+              <BigButton onClick={removeOut} className="rounded-2xl bg-red-500/15 border-2 border-red-500/40 text-red-400 py-5 landscape:py-2.5 font-extrabold text-sm flex items-center justify-center">
+                <Icon name="Minus" size={16} />
+              </BigButton>
+              <BigButton onClick={addOut} className="rounded-2xl bg-red-500/15 border-2 border-red-500/40 text-red-400 py-5 landscape:py-2.5 font-extrabold text-sm">
+                +OUT
+              </BigButton>
+            </div>
           </div>
 
           <BigButton
@@ -3070,9 +3090,9 @@ function Universal({ sport, globalTimer, onBack, roomSession, permissions, consu
         {sport === 'baseball' && (
           <BigButton
             onClick={swapTopBottom}
-            className="w-full rounded-2xl bg-white/10 py-4 font-bold text-white mt-2 mb-3 flex items-center justify-center gap-2"
+            className={`w-full rounded-2xl bg-white/10 py-4 font-bold text-white mt-2 mb-3 flex items-center justify-center gap-2 ${!canPossession ? 'opacity-40' : ''}`}
           >
-            <Icon name="ArrowLeftRight" size={18} /> Swap Top/Bottom Teams
+            <Icon name={canPossession ? 'ArrowLeftRight' : 'Lock'} size={18} /> Swap Top/Bottom Teams
           </BigButton>
         )}
         <BigButton
@@ -3305,6 +3325,7 @@ function Basketball({ globalTimer, onBack, roomSession, permissions, consult }) 
   };
 
   const dismissHistoryEntry = (entry) => {
+    if (!canScore) { vibrate(15); return; }
     setBk((s) => ({ ...s, history: s.history.filter((e) => e !== entry) }));
   };
 
