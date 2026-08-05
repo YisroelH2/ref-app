@@ -14,7 +14,7 @@ import ConsultOverlay from './components/ConsultOverlay.jsx';
 import { isFirebaseConfigured } from './firebaseConfig.js';
 import QRCode from 'qrcode';
 
-const APP_VERSION = '4.3.1';
+const APP_VERSION = '4.3.2';
 
 
 
