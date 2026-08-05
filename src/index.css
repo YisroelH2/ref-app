@@ -19,7 +19,11 @@ body {
   padding-bottom: env(safe-area-inset-bottom);
 }
 .tabular { font-variant-numeric: tabular-nums; }
-#root { height: 100vh; height: 100dvh; overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain; }
+/* #root has no size/overflow of its own — the single scroll container
+   lives in App.jsx. Layering another independent 100dvh + overflow-auto
+   box here caused mismatches with mobile browsers' dynamic toolbars that
+   could leave the page stuck with no scrollable container at all. */
+#root { height: 100%; }
 
 ::-webkit-scrollbar { display: none; }
 

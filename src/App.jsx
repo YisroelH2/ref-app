@@ -1155,14 +1155,14 @@ function LiveClock({ className }) {
 
 function Header({ title, onBack, onSettings, extra }) {
   return (
-    <div className="flex items-center justify-between mb-4 landscape:mb-1 landscape:py-1 landscape:px-3">
-      <div className="flex items-center gap-2">
+    <div className="flex items-center justify-between gap-2 mb-4 landscape:mb-1 landscape:py-1 landscape:px-3">
+      <div className="flex items-center gap-2 min-w-0">
         {onBack && <IconButton name="ChevronLeft" onClick={onBack} label="Back" />}
-        <h1 className="text-2xl landscape:text-lg font-extrabold tracking-tight">{title}</h1>
+        <h1 className="text-2xl landscape:text-lg font-extrabold tracking-tight truncate">{title}</h1>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         {extra}
-        <LiveClock className="text-white/40 text-sm font-bold tabular mr-1" />
+        <LiveClock className="hidden sm:inline-block text-white/40 text-sm font-bold tabular mr-1" />
         {onSettings && <IconButton name="Settings" onClick={onSettings} label="Settings" />}
       </div>
     </div>
@@ -1205,7 +1205,7 @@ function ScoreHalf({ name, score, onScore, onUndo, footer, scoreClassName = 'tex
       onClick={tap}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tap(); } }}
       aria-disabled={disabled}
-      className={`btn-press flex-1 rounded-3xl ${c.bg} border-2 ${c.border} flex flex-col items-center justify-center gap-2 landscape:gap-1 relative overflow-hidden py-4 landscape:py-2 px-4 landscape:px-3 landscape:h-full landscape:min-h-0 ${disabled ? 'opacity-40 saturate-[.4]' : ''}`}
+      className={`btn-press flex-1 rounded-3xl ${c.bg} border-2 ${c.border} flex flex-col items-center justify-center gap-2 landscape:gap-1 relative overflow-hidden py-4 landscape:py-2 px-4 landscape:px-3 landscape:h-full landscape:min-h-[104px] ${disabled ? 'opacity-40 saturate-[.4]' : ''}`}
     >
       <div className={`${c.sub} text-xs font-extrabold tracking-widest self-start flex items-center gap-1`}>
         {disabled && <Icon name="Lock" size={11} />}
@@ -3386,7 +3386,7 @@ function Basketball({ globalTimer, onBack, roomSession, permissions, consult }) 
     const color = team === 'A' ? bk.colorA : bk.colorB;
     const c = teamColorClasses(color);
     return (
-      <div className={`relative flex-1 rounded-3xl ${c.bg} border-2 ${c.border} flex flex-col items-center justify-center gap-3 landscape:gap-1.5 py-4 landscape:py-2 px-3 landscape:h-full landscape:min-h-0`}>
+      <div className={`relative flex-1 rounded-3xl ${c.bg} border-2 ${c.border} flex flex-col items-center justify-center gap-3 landscape:gap-1.5 py-4 landscape:py-2 px-3 landscape:h-full landscape:min-h-[128px]`}>
         <div
           role="button"
           onClick={() => undo(team)}
@@ -3649,15 +3649,15 @@ function App() {
   else content = <Home onSelect={goTo} settings={settings} setSettings={setSettings} roomSession={roomSession} permissions={permissions} />;
 
   return (
-    <div className="h-dvh overflow-hidden">
-      <div className="h-full overflow-y-auto overscroll-y-auto">
+    <>
+      <div className="h-dvh overflow-y-auto overscroll-y-contain">
         <ErrorBoundary key={screen}>{content}</ErrorBoundary>
       </div>
       {isFirebaseConfigured && roomSession.roomCode && (
         <ConsultOverlay consult={consult.consult} respond={consult.respond} nudge={consult.nudge} clientId={roomSession.clientId} />
       )}
       {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
-    </div>
+    </>
   );
 }
 

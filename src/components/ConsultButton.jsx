@@ -74,10 +74,10 @@ export default function ConsultButton({ consult, sendConsult, sending, sport, te
         type="button"
         onClick={() => setOpen(true)}
         aria-label="Ref Consult"
-        className="btn-press flex items-center justify-center gap-1.5 rounded-full bg-white/10 border border-white/10 px-3.5 py-2 text-xs font-bold text-white/60"
+        className="btn-press flex items-center justify-center gap-1.5 rounded-full bg-white/10 border border-white/10 px-2.5 sm:px-3.5 py-2 text-xs font-bold text-white/60 shrink-0"
       >
         <Icon name="MessageCircle" size={15} />
-        Consult
+        <span className="hidden sm:inline">Consult</span>
       </button>
       <Sheet open={open} onClose={() => setOpen(false)} title="Ref Consult">
         <p className="text-white/40 text-xs mb-4 leading-relaxed">
